@@ -1,4 +1,4 @@
-# flow
+# Flow
 This is an attempt to build Objective-C framework for asynchronous (concurrent) execution flow. 
 It should include basic operations like map, fold, compose and more above user-defined actions, which, in turn, may be synchronous or asynchronous.
 
