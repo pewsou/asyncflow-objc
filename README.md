@@ -9,7 +9,7 @@ The motivation is to provide robust toolkit with which one could design (concurr
 
 # Architecture
 The Kit is built as a collection of independent objects each of which represents some concurrency pattern.
-The API provides consistent set of operations while the set is split to 2 groups: one for concurrent/asynchronous execution, other for conditioned execution (will be available in future).
+The API provides consistent set of operations while the set is split to 2 groups: one for linear concurrent/asynchronous execution, other for conditional execution (will be available in future).
 
 # Semantics
 In the course of this SW package next terms defined:
