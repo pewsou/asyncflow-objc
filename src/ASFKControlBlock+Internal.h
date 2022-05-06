@@ -13,7 +13,6 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 //
-//  Created by Boris Vigman on 05/04/2019.
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 
 #import "ASFKBase.h"
