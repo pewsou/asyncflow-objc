@@ -1,6 +1,5 @@
 # Asynchronous Flow Kit
 This is an attempt to build Objective-C framework for asynchronous (concurrent) programming. 
-It should include basic operations if-then-else, loops, composition and more above application-defined actions, which, in turn, may be synchronous or asynchronous.
 
 # Why?
 *Concurrent programming is complex. Let's make it easier.*
