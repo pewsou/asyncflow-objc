@@ -22,3 +22,5 @@ In the course of this SW package next terms defined:
 
 # Available Concurrency/Asynchronity Patterns
 1. *Pipelining* - multiple data, multiple routines. Proc1 is applied to item 1, result passed to Proc2, while Proc1 starts working on item 2 and so on. New data items can be submitted anytime. The execution is transparently performed using internal threadpool, while executing threads mapped, onto available CPUs providing by this some degree of parallelization.
+
+Contact by email: rainbowsup191+ASFK@gmail.com
