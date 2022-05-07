@@ -12,7 +12,7 @@ The API provides consistent set of operations while the set is split to 2 groups
 
 # Semantics
 In the course of this SW package next terms defined:
-1. *Procedure* - this is routine provided by caller ("block" in terms of Obj-C) that only supposed to process data fed by set of arguments.
+1. *Routine/Code Block* - this is routine provided by caller ("block" in terms of Obj-C) that only supposed to process data fed by set of arguments.
 2. *Summary* - a routine provided by caller; it is called when data processing session is done. It receives execution results as parameter.
 3. Method *"callXXX"* - **blocking** method; it will always return only AFTER all the procedures that have started by this call also have ended and summary was called (if exists).
 3. Method *"castXXX"* - **non-blocking** method; it will always return without waiting for ending of procedures.
