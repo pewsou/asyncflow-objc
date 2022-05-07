@@ -22,4 +22,4 @@ In the course of this SW package next terms defined:
 6. *Session* - any batch of data submitted to processing by single call of *call/cast* method OR set of procedures submitted for repeated execution. Each session has unique ID.
 
 # Available Concurrency/Asynchronity Patterns
-1. *Pipelining* - multiple data, multiple procedures. Proc1 is applied to item 1, result passed to Proc2, while Proc1 starts working on item 2 and so on. New data items can be submitted anytime. The execution is transparently performed using internal threadpool, while executing threads mapped 1:1 onto available CPUs providing by this some degree of parallelization.
+1. *Pipelining* - multiple data, multiple procedures. Proc1 is applied to item 1, result passed to Proc2, while Proc1 starts working on item 2 and so on. New data items can be submitted anytime. The execution is transparently performed using internal threadpool, while executing threads mapped, onto available CPUs providing by this some degree of parallelization.
