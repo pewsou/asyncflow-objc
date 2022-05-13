@@ -1426,7 +1426,7 @@
     return 0;
 }
 #pragma mark - Configuring
--(BOOL) setProperties:(ASFKMBContainerProperties*)props forUser:(id)uid secret:(ASFKPrivateSecret*)secret{
+-(BOOL) setProperties:(ASFKMBContainerProperties*)props forMailbox:(id)uid secret:(ASFKPrivateSecret*)secret{
     if(!uid || !props){
         return NO;
     }
