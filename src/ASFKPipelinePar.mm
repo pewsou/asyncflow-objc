@@ -34,7 +34,7 @@
 -(id)init{
     self = [super init];
     if(self){
-        //_defaultSessionId=[ASFKBase generateIdentity];
+
         [self _initPipeline];
     }
     return self;
@@ -49,7 +49,9 @@
 -(void) _initPipeline{
     isOnline=NO;
     globalTPool=[ASFKGlobalThreadpool sharedManager];
+
 }
+
 -(ASFKPipelineSession*) _resolveSessionforParams:(ASFKParamSet*)ps sessionCreated:(BOOL&)created{
     ASFKPipelineSession* s=nil;
     if(ps.sessionId != nil && NO==[ps.sessionId isKindOfClass:[NSNull class]]){
@@ -83,6 +85,18 @@
     [self registerSession:[seq getControlBlock]];
     return seq;
 }
+-(void) setQualityOfService:(long)newqos{
+    if(
+       newqos==QOS_CLASS_USER_INTERACTIVE ||
+       newqos==QOS_CLASS_UTILITY ||
+       newqos==QOS_CLASS_BACKGROUND
+       ){
+        qos=newqos;
+    }else{
+        WASFKLog(@"ASFKPipelinePar: Invalid Class of Service provided; setting to BACKGROUND");
+        qos=QOS_CLASS_BACKGROUND;
+    }
+}
 
 /*!
  @return number of running sessions
@@ -106,13 +120,12 @@
     [globalTPool flushSession:sessionId];
 }
 
-
 -(BOOL)isBusySession:(id)sessionId{
     return [globalTPool  isBusySession:sessionId];
 }
 
 -(BOOL)isReady{
-    
+
     return YES;
 }
 
@@ -200,10 +213,11 @@
 }
 #pragma mark - Non-blocking methods
 
+
 -(NSDictionary*) _castArray:(ASFKParamSet*)params{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
-
+    //dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
     if (
         params.sessionId==nil
         ||[params.sessionId isKindOfClass:[NSNull class]]
@@ -211,7 +225,7 @@
         ||[params.input isKindOfClass:[NSNull class]]
         ||[params.input count]<1
         ){
-
+        //dispatch_semaphore_signal(semHighLevelCall);
         uint64 main_t2=[ASFKBase getTimestamp];
         double elapsed=(main_t2-main_t1)/1e9;
         EASFKLog(@"ASFKPipelinePar:Some of input parameters are invalid for session %@",params.sessionId);
@@ -232,7 +246,7 @@
             [self _prepareSession:s withParams:params];
             [globalTPool addSession:s withId:s.sessionId];
             [globalTPool postDataAsArray:params.input forSession:s.sessionId];
-
+            //[self registerSession:[s getControlBlock]];
             uint64 main_t2=[ASFKBase getTimestamp];
             double elapsed=(main_t2-main_t1)/1e9;
             
@@ -252,12 +266,12 @@
              kASFKReturnSessionId:[NSNull null],
              kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
              kASFKReturnDescription:@"Some of input parameters are invalid: missing data or Routines or summary"};
-
+    //dispatch_semaphore_signal(semHighLevelCall);
 }
 -(NSDictionary*) _castOrderedSet:(ASFKParamSet *)params{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
-    
+    //dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
     if (
         params.sessionId==nil
         ||[params.sessionId isKindOfClass:[NSNull class]]
@@ -312,7 +326,7 @@
 -(NSDictionary*) _castUnorderedSet:(ASFKParamSet *)params{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
-
+    //dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
     if (
         params.sessionId==nil
         ||[params.sessionId isKindOfClass:[NSNull class]]
@@ -343,6 +357,7 @@
             [self _prepareSession:s withParams:params];
             [globalTPool  addSession:s withId:s.sessionId];
             [globalTPool  postDataAsUnorderedSet:params.input forSession:s.sessionId];
+
             uint64 main_t2=[ASFKBase getTimestamp];
             double elapsed=(main_t2-main_t1)/1e9;
             
@@ -374,9 +389,10 @@
         ||params.input==nil
         ||[params.input isKindOfClass:[NSNull class]]
         ||[params.input count]<1
-        )
-    {
 
+        
+        ){
+        
         uint64 main_t2=[ASFKBase getTimestamp];
         double elapsed=(main_t2-main_t1)/1e9;
         EASFKLog(@"ASFKPipelinePar:Some of input parameters are invalid for session %@",params.sessionId);
@@ -398,6 +414,7 @@
             [self _prepareSession:s withParams:params];
             [globalTPool  addSession:s withId:s.sessionId];
             [globalTPool  postDataAsDictionary:params.input forSession:s.sessionId];
+
             uint64 main_t2=[ASFKBase getTimestamp];
             double elapsed=(main_t2-main_t1)/1e9;
             

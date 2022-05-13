@@ -12,6 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 
 #ifndef ASFKExpirationCondition_h
@@ -69,7 +70,6 @@
  @return obejct with latest deadline (delay). If deadline and delay not set for both - returns self.
  */
 -(ASFKConditionTemporal*) chooseEarliest:(ASFKConditionTemporal*)cond;
-//-(NSComparisonResult) compareWith:(ASFKConditionTemporal*)cond;
 
 @end
 #pragma mark - Expiration conditions

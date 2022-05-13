@@ -12,13 +12,19 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+//
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
+#import "ASFKBase.h"
 
-#import <AsyncUT_FrameW/AsyncUT_FrameW.h>
-
-@interface ASFKQueue (Internal)
--(void) begin;
--(NSArray*) getData;
--(void) commit;
+@interface ASFKFilteringQueue : ASFKQueue
+typedef NSIndexSet* (^clbkASFKFQFilter)(NSArray* collection, NSRange range);
+-(void) setMaxQSize:(NSUInteger)size;
+-(void) setMinQSize:(NSUInteger)size;
+-(void) setDroppingPolicy:(eASFKQDroppingPolicy)policy;
+-(void) setDroppingAlgorithmL1:(ASFKFilter*)dropAlg;
+-(void) filterWith:(ASFKFilter*)filter;
+//-(BOOL) prependWithFilter:(ASFKFilter*)filter;
+//-(BOOL) appendWithFilter:(ASFKFilter*)filter;
+-(BOOL) removeObjWithId:(id)obj andBlock:(BOOL (^)(id item,id sample, BOOL* stop)) blk;
 @end

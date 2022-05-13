@@ -19,7 +19,7 @@
 #import <Foundation/Foundation.h>
 #import "ASFKPrjConfig.h"
 
-#define ASFK_VERSION @"0.1.1"
+#define ASFK_VERSION @"0.2.1"
 #define ASFK_IDENTITY_TYPE id
 
 #ifdef __ASFK_VERBOSE_PRINTING__
@@ -64,11 +64,14 @@
 
 #define kASFKReturnResult @"asfk_ret_result"
 #define ASFK_RET_SUMRESULT @"asfk_ret_sumresult"
+
 #define ASFK_RET_NEXT_TARGET @"asfk_ret_nextTarget"
 #define kASFKReturnSessionId @"asfk_ret_sessionId"
 #define kASFKReturnDescription @"asfk_ret_description"
+
 #define kASFKReturnStatsTimeProcsElapsedSec @"asfk_ret_stats_procs_tesec"
 #define kASFKReturnStatsTimeSessionElapsedSec @"asfk_ret_stats_session_tesec"
+
 #define kASFKProgressRoutine @"progress_proc"
 #define kASFKCancelRoutine @"cancel_proc"
 #define kASFKSummaryRoutine @"summary_proc"
@@ -78,12 +81,22 @@
 
 #import <atomic>
 #import <vector>
+
+enum eASFKQDroppingPolicy{
+    E_ASFK_Q_DP_TAIL=0,
+    E_ASFK_Q_DP_HEAD,
+    E_ASFK_Q_DP_REJECT,
+    E_ASFK_Q_DP_ALGO
+};
+
 typedef id ( ^ASFKThreadpoolSummary)(void);
 
 @interface ASFKGlobalQueue : NSObject
 +(ASFKGlobalQueue *)sharedManager;
 -(void) setSummary:(ASFKThreadpoolSummary)summary;
+
 -(id) submitBlocks:(NSArray<dispatch_block_t>*)blarray summary:(id(^)(void))summary QoS:(long)qos blocking:(BOOL)blocking;
+
 @end
 
 @protocol ASFKRoutable
@@ -161,6 +174,7 @@ typedef id ( ^ASFKExecutableRoutine)(id<ASFKControlCallback> controlBlock, id da
 
 typedef id ( ^ASFKExecutableRoutineSummary)(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data);
 typedef id ( ^ASFKCancellationRoutine)(id identity);
+
 
 /**
  @param controlBlock object controlling the execution
@@ -250,6 +264,7 @@ typedef BOOL  ( ^ASFKExecutableRoutineLoopConditional)(id<ASFKControlCallback> c
 -(NSUInteger) controlBlocks;
 @end
 
+#import "ASFKMBSecret.h"
 #import "ASFKExpirationCondition.h"
 
 @interface ASFKExecutionParams:NSObject{
@@ -283,4 +298,11 @@ typedef BOOL  ( ^ASFKExecutableRoutineLoopConditional)(id<ASFKControlCallback> c
 -(void) unoccupy;
 @end
 
+#import "ASFKFilter.h"
+#import "ASFKFilteringQueue.h"
+#import "ASFKMailbox.h"
 #import "ASFKPipelinePar.h"
+
+
+
+

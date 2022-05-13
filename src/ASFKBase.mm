@@ -38,6 +38,7 @@
 }
 @end
 
+
 @implementation ASFKGlobalQueue{
     NSMutableArray* mQ;
     dispatch_queue_t dConQ_UserInteractive;
@@ -74,7 +75,6 @@
     __block dispatch_queue_t q=[self _resolveQueue:qos];
     if(blocking){
         if(blarray && [blarray count]>0){
-
             dispatch_apply([blarray count], q, ^(size_t index) {
                 dispatch_block_t b= [blarray objectAtIndex:index];
                 b();

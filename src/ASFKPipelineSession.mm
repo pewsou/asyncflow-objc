@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 #define ASFK_LOCAL_REPLACE 0
@@ -67,7 +67,6 @@ public:
     self=[super init];
     if(self){
         [self _PSinitWithSession:sessionId andSubsession:subId];
-
     }
     return self;
 }
@@ -82,13 +81,13 @@ public:
     dataQueues=[NSMutableArray array];
     queueZero=[[ASFKThreadpoolQueue alloc]init];
     if(sessionId){
-        cblk= [self newSession:sessionId andSubsession:subId];
+        cblk= [self newSession:sessionId andSubsession:subId];// [ASFKControlBlock new];
     }else{
-        cblk= [self newSession];
+        cblk= [self newSession];// [ASFKControlBlock new];
     }
     
     self.sessionId=cblk.sessionId;
-    
+
     intermediateProcs=[NSMutableArray array];
     passSummary=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
         ASFKLog(@"ASFKPipelineSession: Stub summary");
@@ -271,7 +270,7 @@ public:
     }
 }
 -(void) replaceRoutinesWithArray:(NSArray<ASFKExecutableRoutine>*)ps{
-
+    //ready=NO;
     [lock lock];
     long psc=[ps count];
     long procsc=[procs count];
@@ -333,10 +332,10 @@ public:
         }
         execRange=NSMakeRange(0, [dataQueues count]);
     }
-    //empty priority queue
+
     [self _resetPriorityQueue];
     [self _adoptDataFromZeroQueue];
-    //re-populate priority queue
+
     long c=0;
     for (ASFKThreadpoolQueue* q in dataQueues) {
         sASFKPrioritizedQueueItem qin;
@@ -360,6 +359,7 @@ public:
     ASFKLog(@" Session %@ to be cancelled",self.sessionId);
     [cblk cancel];
     [self flush];
+
 }
 -(void) _resetQueues{
     for (ASFKThreadpoolQueue* q in dataQueues) {
@@ -371,23 +371,23 @@ public:
     [lock lock];
     cblk->flushed=YES;
     [self _resetQueues];
-    //[cblk flushRequested:YES];
+
     [queueZero reset];
     [lock unlock];
     busyCount=0;
 }
-//-(void)pause{
-//    [lock lock];
-//    cblk->paused=YES;
-//    [lock unlock];
-//
-//}
-//-(void)resume{
-//    [lock lock];
-//    cblk->paused=NO;
-//    [lock unlock];
-//
-//}
+-(void)pause{
+    [lock lock];
+    cblk->paused=YES;
+    [lock unlock];
+
+}
+-(void)resume{
+    [lock lock];
+    cblk->paused=NO;
+    [lock unlock];
+
+}
 -(void)reset{
 
 }
@@ -424,7 +424,7 @@ public:
         }
     }
     if(isStopped.load()){
-
+ 
         [lock unlock];
 
         return eASFK_ES_WAS_CANCELLED;
@@ -434,7 +434,7 @@ public:
         || [cblk cancellationRequestedByStarter])
 
        ){
-
+ 
         [self _resetPriorityQueue];
         ASFKCancellationRoutine cru=cancellationHandler;
         [lock unlock];
@@ -507,7 +507,7 @@ public:
                 }
                 [lock unlock];
                 if([cblk cancellationRequestedByCallback]|| [cblk cancellationRequestedByStarter]){
-
+ 
                     [lock lock];
                     [self _resetPriorityQueue];
                     ASFKCancellationRoutine cru=cancellationHandler;

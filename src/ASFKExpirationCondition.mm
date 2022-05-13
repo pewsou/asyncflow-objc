@@ -12,6 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -70,6 +71,7 @@
 -(void) _setDelay:(NSTimeInterval)seconds{
     if(seconds>0){
         using namespace std::chrono;
+        
 
         _itsDelay=seconds;
 
@@ -247,7 +249,7 @@
 -(id) init{
     self = [super init];
     if(self){
-        batchSize=INT_MAX;
+        batchSize=ULONG_MAX;
     }
     return self;
 }

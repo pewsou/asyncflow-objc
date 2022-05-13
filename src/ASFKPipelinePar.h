@@ -15,18 +15,20 @@
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
-#ifndef ASFKPipelineParHD_h
-#define ASFKPipelineParHD_h
+#ifndef ASFKPipelinePar_h
+#define ASFKPipelinePar_h
 /*!
  @see ASFKLinearFlow
  @brief This class provides pipelined execution's functionality. For N Routines it takes Routine P0 and applies it to item D0. Upon completion P0 is applied to D1 while P1 is concurrently applied to D0 and so on.
  */
 @interface ASFKPipelinePar : ASFKLinearFlow
 
+
 /*!
  @brief Equals YES if session with given identity exists AND is still processing data batch ; NO otherwise.
  */
 -(BOOL) isBusySession:(ASFK_IDENTITY_TYPE)sessionId;
+
 +(long long) runningSessionsCount;
 /*!
  @brief Cancels ALL sessions created by ALL instances.
@@ -37,6 +39,7 @@
  */
 -(void)cancelAll;
 -(void)cancelSession:(ASFK_IDENTITY_TYPE)sessionId;
+
 /*!
  @brief flushes all queued items for all sessions created by this instance.
  */
@@ -45,10 +48,17 @@
  @brief flushes all queued items for given session ID.
  */
 -(void)flushSession:(ASFK_IDENTITY_TYPE)sessionId;
+
 /*!
  @brief flushes all queued items for all sessions.
  */
 +(void)flushAllGlobally;
+
+/*!
+ @brief sets new class of QoS (i.e. thread priority).
+ @param newqos required class of Quality of Service . Allowed values are:QOS_CLASS_USER_INTERACTIVE, QOS_CLASS_UTILITY, QOS_CLASS_BACKGROUND. By default QOS_CLASS_BACKGROUND is set. The parameter will be in effect after restart.
+ */
+-(void) setQualityOfService:(long)newqos;
 
 /*!
  @brief returns list of session ID's for all sessions created by this instance.
@@ -64,4 +74,4 @@
 -(NSDictionary* _Nonnull) createSession:(ASFKExecutionParams*_Nullable) exparams sessionId:(id _Nullable ) sid;
 
 @end
-#endif /* ASFKPipelineParHD */
+#endif /* ASFKPipelinePar */

@@ -23,7 +23,7 @@ typedef enum enumASFKPipelineExecutionStatus{
     eASFK_ES_HAS_MORE=0,
     eASFK_ES_HAS_NONE,
     eASFK_ES_WAS_CANCELLED,
-
+    //eASFK_ES_WAS_EXPIRED,
     eASFK_ES_SKIPPED_MAINT
 } eASFKPipelineExecutionStatus;
 @interface ASFKPipelineSession : ASFKBase{
@@ -33,9 +33,7 @@ typedef enum enumASFKPipelineExecutionStatus{
 @property  ASFK_IDENTITY_TYPE sessionId;
 -(id)initWithSessionId:(ASFK_IDENTITY_TYPE)sessionId andSubsessionId:(ASFK_IDENTITY_TYPE)subId;
 -(ASFKControlBlock*) getControlBlock;
-
 -(void) flush;
-
 -(void) cancel;
 -(void) postDataItemsAsArray:(NSArray*)array;
 -(void) postDataItemsAsOrderedSet:(NSOrderedSet*)set;

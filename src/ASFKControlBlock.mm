@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -23,6 +23,7 @@
     std::atomic< BOOL> abortByCallback;
     std::atomic< BOOL> abortByCaller;
     std::atomic< BOOL> abortByInternal;
+
     std::vector<std::vector<long long>> indexes;
 }
 -(id)initWithParent:(ASFK_IDENTITY_TYPE)parentId sessionId:(ASFK_IDENTITY_TYPE) sessionId andSubId:(ASFK_IDENTITY_TYPE)subid{
@@ -32,7 +33,7 @@
         _sessionId=[ASFKBase concatIdentity:sessionId withIdentity:subid];
 
         itsLock=[[NSLock alloc]init];
- 
+
         abortByCallback=NO;
         abortByCaller=NO;
         abortByInternal=NO;
@@ -65,7 +66,6 @@
     abortByCallback=NO;
     abortByCaller=NO;
     [itsLock lock];
-
     indexes.clear();
     [itsLock unlock];
 }

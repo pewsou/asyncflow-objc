@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -108,7 +108,6 @@ struct ThreadpoolConfigRange{
     [lkMutexL1 unlock];
     return (ac);
 }
-
 -(BOOL) isPausedSession:(ASFK_IDENTITY_TYPE)sessionId{
     BOOL result=NO;
     if(sessionId){
@@ -170,8 +169,6 @@ struct ThreadpoolConfigRange{
         [ss flush];
         ss=nil;
     }];
-
-
     [lkMutexL1 unlock];
 }
 -(void) cancelSession:(ASFK_IDENTITY_TYPE)sessionId{
@@ -186,7 +183,6 @@ struct ThreadpoolConfigRange{
             [lkMutexL2 lock];
             onlineSessions=[runningSessions allValues];
             [lkMutexL2 unlock];
-
             [allSessions removeObjectForKey:sessionId];
             [pausedSessions removeObjectForKey:sessionId];
             ss=nil;
@@ -198,10 +194,10 @@ struct ThreadpoolConfigRange{
 -(void) cancelAll{
     DASFKLog(@"ASFKGlobalThreadpool: Cancelling all sessions");
     [lkMutexL1 lock];
-
     [allSessions enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
         ASFKPipelineSession* ss=[allSessions objectForKey:obj];
         [ss cancel];
+
         ss=nil;
     }];
     [lkMutexL2 lock];
@@ -219,80 +215,7 @@ struct ThreadpoolConfigRange{
     [lkMutexL1 unlock];
     DASFKLog(@"ASFKGlobalThreadpool: All sessions should be cancelled");
 }
--(void) pauseSession:(ASFK_IDENTITY_TYPE)sessionId{
-    DASFKLog(@"ASFKGlobalThreadpool: Pausing session with ID %@",sessionId);
-    if(sessionId){
-        [lkMutexL1 lock];
-        ASFKPipelineSession* ss=[runningSessions objectForKey:sessionId];
-        if(ss){
-            ss->paused=YES;
-            [pausedSessions setObject:ss forKey:sessionId];
-            [runningSessions removeObjectForKey:sessionId];
-            [lkMutexL2 lock];
-            onlineSessions=[runningSessions allValues];
 
-            [lkMutexL2 unlock];
-            ss=nil;
-            
-        }
-        [lkMutexL1 unlock];
-    }
-    DASFKLog(@"ASFKGlobalThreadpool: Session %@ paused",sessionId);
-}
--(void) pauseAll{
-    DASFKLog(@"ASFKGlobalThreadpool: Pausing all sessions");
-    [lkMutexL1 lock];
-    [pausedSessions addEntriesFromDictionary:runningSessions];
-    [runningSessions enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop){
-        ASFKPipelineSession* ss=(ASFKPipelineSession*)obj;
-        ss->paused=YES;
-    }];
-
-    runningSessions=[NSMutableDictionary new];
-    [lkMutexL2 lock];
-    onlineSessions = [NSArray new];
-    [lkMutexL2 unlock];
-    [lkMutexL1 unlock];
-    DASFKLog(@"ASFKGlobalThreadpool: All sessions paused");
-}
--(void) resumeSession:(ASFK_IDENTITY_TYPE)sessionId{
-    DASFKLog(@"ASFKGlobalThreadpool: Resuming session with ID %@",sessionId);
-    if(sessionId){
-        [lkMutexL1 lock];
-        ASFKPipelineSession* ss=[pausedSessions objectForKey:sessionId];
-        if(ss){
-            ss->paused=NO;
-            [pausedSessions removeObjectForKey:sessionId];
-            [runningSessions setObject:ss forKey:sessionId];
-            [lkMutexL2 lock];
-            onlineSessions = [runningSessions allValues];
-            [lkMutexL2 unlock];
-        }
-        [lkMutexL1 unlock];
-        ss=nil;
-    }
-    DASFKLog(@"ASFKGlobalThreadpool: Session %@ resumed",sessionId);
-}
--(void) resumeAll{
-    DASFKLog(@"ASFKGlobalThreadpool: Resuming all sessions");
-    [lkMutexL1 lock];
-
-    [runningSessions addEntriesFromDictionary:pausedSessions];
-    [pausedSessions enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop){
-        ASFKPipelineSession* ss=(ASFKPipelineSession*)obj;
-        if(ss){
-            ss->paused=NO;;
-        
-        }
-    }];
-
-    pausedSessions=[NSMutableDictionary new];
-    [lkMutexL2 lock];
-    onlineSessions=[runningSessions allValues];
-    [lkMutexL2 unlock];
-    [lkMutexL1 unlock];
-    DASFKLog(@"ASFKGlobalThreadpool: All sessions resumed");
-}
 -(void) postDataAsDictionary:(NSDictionary*)data forSession:(ASFK_IDENTITY_TYPE)sessionId{
     [lkMutexL1 lock];
     ASFKPipelineSession* ss=[allSessions objectForKey:sessionId];
@@ -429,12 +352,13 @@ struct ThreadpoolConfigRange{
                 ThreadpoolConfigRange tcr;
                 [lkMutexL2 lock];
 
+                ///-----Housekeeping-----
+                ///
                 vectProc2Bounds.clear();
                 vectProc2Bounds.resize(tpcfg.actualThreadsCount);
                 [self _reassignProcs:tpc];
                 tcr=vectProc2Bounds[ii];
                 if(tcr.length==0 ||
-                   //[runningSessions count]==0 ||
                    [onlineSessions count]==0){
                     [lkMutexL2 unlock];
                     continue;
@@ -454,11 +378,9 @@ struct ThreadpoolConfigRange{
                 __block ASFKPipelineSession* ss=[onlineSessions objectAtIndex:selectedSlot];
                 if(ss && [ss->cblk cancellationRequested]){
                     ThreadpoolConfig tpc1=tpcfg;
-
                     onlineSessions=[runningSessions allValues];
                     [self _reassignProcs:tpc1];
                     [lkMutexL2 unlock];
-
                     continue;
                 }
 
@@ -480,11 +402,13 @@ struct ThreadpoolConfigRange{
         dispatch_block_t b1=dispatch_block_create(static_cast<dispatch_block_flags_t>(0), b0);
         [blocks addObject:b1];
     }
+
         id sumresult= [[ASFKGlobalQueue sharedManager]submitBlocks:blocks summary:(id)^{
             busyCount=0;
             return nil;
         }
         QoS: qos blocking:NO];
+
 }
 @end
 

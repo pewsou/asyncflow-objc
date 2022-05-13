@@ -12,13 +12,18 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
 #import "ASFKBase.h"
 
-@interface ASFKBase (Statistics)
--(void)addProcTimeInterval:(double)timeInterval ;
--(void)addSessionTimeInterval:(double)timeInterval ;
+@interface ASFKFilter : ASFKLinearFlow
+-(BOOL) testCriteriaMatch:(id)object;
+-(BOOL) filterCandidatesInArray:(NSArray*)objects saveToArray:(NSMutableArray*)array;
+-(BOOL) filterCandidatesInArray:(NSArray*)objects saveToIndexSet:(NSMutableIndexSet*)iset;
+-(BOOL) filterCandidatesInArray:(NSArray*)objects saveToRange:(NSRange&)range;
+-(BOOL) filterCandidatesInSet:(NSSet*)objects saveToArray:(NSMutableArray*)array;
+-(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects saveToIndexSet:(NSMutableIndexSet*)iset;
+-(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects saveToRange:(NSRange&)range;
+-(BOOL) filterCandidatesInDictionary:(NSDictionary*)objects saveToKeys:(NSMutableArray*)keys values:(NSMutableArray*)values;
 @end

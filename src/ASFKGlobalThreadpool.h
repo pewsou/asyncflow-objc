@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -35,7 +35,9 @@
 -(void) cancelSession:(ASFK_IDENTITY_TYPE)sessionId;
 -(void) cancelAll;
 -(BOOL) isBusySession:(ASFK_IDENTITY_TYPE)sessionId;
+
 -(void) flushSession:(ASFK_IDENTITY_TYPE)sessionId;
 -(void) flushAll;
+
 -(long) itemsCountForSession:(ASFK_IDENTITY_TYPE)sessionId;
 @end

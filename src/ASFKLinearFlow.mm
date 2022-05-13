@@ -311,11 +311,11 @@
 - (NSDictionary *)stepNonblockingWithData:(id)data {
     NSDictionary* result=nil;
     if([data isKindOfClass:[NSDictionary class]]){
-        //result=[self castDictionary:data exParam:nil];
+        
     }else if([data isKindOfClass:[NSArray class]]){
-        //result=[self castArray:data exParam:nil];
+        
     }else{
-        //result=[self castObject:data exParam:nil];
+        
     }
     return result;
 }

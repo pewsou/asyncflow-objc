@@ -13,6 +13,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -60,7 +61,6 @@
     }
     return ps;
 }
-
 @end
 
 @implementation ASFKParamSet
@@ -73,6 +73,7 @@
         self.input=nil;
         self.excond=nil;
         self.hasForeignProcs=NO;
+        //self.customSessionId=nil;
         self.sessionId=nil;
     }
     return self;
