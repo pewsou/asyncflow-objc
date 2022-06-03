@@ -58,7 +58,7 @@ ASFKMasterSecret* masterSecretBack;
                 return YES;
             }
         };
-
+        
         secretProcRead=^BOOL(ASFKSecret* sec0,ASFKSecret* sec1){
             if(sec0 && sec1){
                 return [sec1 matchesReaderSecret:sec0];
@@ -103,7 +103,6 @@ ASFKMasterSecret* masterSecretBack;
                 return YES;
             }
         };
-
         secretProcConfig=^BOOL(ASFKSecret* sec0,ASFKSecret* sec1){
             if(sec0 && sec1){
                 return [sec1 matchesConfigSecret:sec0];
@@ -127,6 +126,30 @@ ASFKMasterSecret* masterSecretBack;
             }
             
         };
+        secretProcIssuer=^BOOL(ASFKSecret* sec0,ASFKSecret* sec1){
+            if(sec0 && sec1){
+                return [sec1 matchesIssuerSecret:sec0];
+            }
+            else if(sec0 || sec1){
+                return NO;
+            }
+            else{
+                return YES;
+            }
+            
+        };
+        secretProcModerate=^BOOL(ASFKSecret* sec0,ASFKSecret* sec1){
+            if(sec0 && sec1){
+                return [sec1 matchesModeratorSecret:sec0];
+            }
+            else if(sec0 || sec1){
+                return NO;
+            }
+            else{
+                return YES;
+            }
+        };
+        
 
     }
     return self;
@@ -137,16 +160,20 @@ ASFKMasterSecret* masterSecretBack;
         if(newsec!=nil){
             //test validity of new secret
             if([newsec validSecretSecurity]){
+
                 _masterSecret=newsec;
                 masterSecretBack=nil;
+
                 ASFKLog(@"DONE");
                 return YES;
             }
             return NO;
         }
         else{
+
             _masterSecret=newsec;
             masterSecretBack=nil;
+
             return YES;
         }
     }
@@ -157,17 +184,21 @@ ASFKMasterSecret* masterSecretBack;
            [self isMasterSecretValid:oldsec matcher:secretProcSecurity]){
             if(newsec!=nil){
                 if([newsec validSecretSecurity]){
+
                     [_masterSecret invalidateAll];
                     _masterSecret=newsec;
                     masterSecretBack=nil;
+
                     ASFKLog(@"DONE");
                     return YES;
                 }
                 return NO;
             }
             else{
+
                 [_masterSecret invalidateAll];
                 _masterSecret=newsec;
+
                 ASFKLog(@"DONE");
                 return YES;
             }
@@ -250,7 +281,6 @@ ASFKMasterSecret* masterSecretBack;
     }
     return NO;
 }
-
 -(BOOL) matchConfigSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther{
     if(secCurrent && secOther){
         BOOL r1=secretProcConfig(secCurrent,secOther);
@@ -260,6 +290,25 @@ ASFKMasterSecret* masterSecretBack;
     }
     return NO;
 }
+-(BOOL) matchModeratorSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther{
+    if(secCurrent && secOther){
+        BOOL r1=secretProcModerate(secCurrent,secOther);
+        return r1;
+    }else if(secCurrent==nil && secOther==nil){
+        return YES;
+    }
+    return NO;
+}
+-(BOOL) matchIssuerSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther{
+    if(secCurrent && secOther){
+        BOOL r1=secretProcIssuer(secCurrent,secOther);
+        return r1;
+    }else if(secCurrent==nil && secOther==nil){
+        return YES;
+    }
+    return NO;
+}
+
 #pragma mark - Private methods
 -(BOOL) isMasterSecretValid:(ASFKMasterSecret*)msecret matcher:(ASFKSecretComparisonProc)match{
     if(_masterSecret && msecret){

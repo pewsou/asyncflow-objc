@@ -60,9 +60,8 @@
 -(void) _setDeadline:(NSDate*)aDate{
     if(aDate){
 
-        _itsDelay=-1;
+        _itsDelay=-1;//dd0/double(1e6);
         _itsDeadline=aDate;
-
     }else{
         _itsDelay=-1;
         _itsDeadline=nil;
@@ -71,7 +70,6 @@
 -(void) _setDelay:(NSTimeInterval)seconds{
     if(seconds>0){
         using namespace std::chrono;
-        
 
         _itsDelay=seconds;
 

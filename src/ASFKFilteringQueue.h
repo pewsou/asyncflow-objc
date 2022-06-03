@@ -24,7 +24,5 @@ typedef NSIndexSet* (^clbkASFKFQFilter)(NSArray* collection, NSRange range);
 -(void) setDroppingPolicy:(eASFKQDroppingPolicy)policy;
 -(void) setDroppingAlgorithmL1:(ASFKFilter*)dropAlg;
 -(void) filterWith:(ASFKFilter*)filter;
-//-(BOOL) prependWithFilter:(ASFKFilter*)filter;
-//-(BOOL) appendWithFilter:(ASFKFilter*)filter;
 -(BOOL) removeObjWithId:(id)obj andBlock:(BOOL (^)(id item,id sample, BOOL* stop)) blk;
 @end

@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -23,6 +23,7 @@
 #include <atomic>
 #include <deque>
 #import "ASFKGlobalThreadpool.h"
+#import "ASFKPipelineSession.h"
 @interface ASFKPipelinePar()
 @end
 @implementation ASFKPipelinePar{
@@ -34,7 +35,7 @@
 -(id)init{
     self = [super init];
     if(self){
-
+        //_defaultSessionId=[ASFKBase generateIdentity];
         [self _initPipeline];
     }
     return self;
@@ -52,12 +53,13 @@
 
 }
 
--(ASFKPipelineSession*) _resolveSessionforParams:(ASFKParamSet*)ps sessionCreated:(BOOL&)created{
-    ASFKPipelineSession* s=nil;
+-(ASFKPipelineSession*) _resolveSessionforParams:(ASFKParamSet*)ps {
+    ASFKThreadpoolSession* s=nil;
     if(ps.sessionId != nil && NO==[ps.sessionId isKindOfClass:[NSNull class]]){
         s=[globalTPool getThreadpoolSessionWithId:ps.sessionId];
-        if(s){
-            return s;
+        
+        if(s && [s isKindOfClass:[ASFKPipelineSession class]]){
+            return (ASFKPipelineSession*)s;
         }
         else{
             EASFKLog(@"Session %@ not found; probably wrong ID submitted",ps.sessionId);
@@ -65,9 +67,9 @@
         }
     }
     else
-
+        
     {
-
+        
         return nil;
     }
 }
@@ -80,7 +82,7 @@
     return newseq;
 }
 -(ASFKPipelineSession*) _prepareSession:(ASFKPipelineSession*)seq withParams:(ASFKParamSet*) params {
-    [seq addRoutinesFromArray:params.procs];
+    [seq replaceRoutinesWithArray:params.procs];
     [seq setSummary:params.summary];
     [self registerSession:[seq getControlBlock]];
     return seq;
@@ -104,7 +106,12 @@
 +(long long) runningSessionsCount{
     return [[ASFKGlobalThreadpool sharedManager]  runningSessionsCount];
 }
-
+/*!
+ @return number of paused sessions
+ */
++(long long) pausedSessionsCount{
+    return [[ASFKGlobalThreadpool sharedManager]  pausedSessionsCount];
+}
 +(void)flushAllGlobally{
     [[ASFKGlobalThreadpool sharedManager]  flushAll];
 }
@@ -120,12 +127,51 @@
     [globalTPool flushSession:sessionId];
 }
 
+/*!
+ @brief flushes all queued items for all sessions created by this instance.
+ */
+-(void)pauseAll{
+    [lkNonLocal lock];
+    for (id s in ctrlblocks) {
+        [globalTPool  pauseSession:s];
+    }
+    [lkNonLocal unlock];
+}
+/*!
+ @brief flushes all queued items for given session ID.
+ */
+-(void)pauseSession:(ASFK_IDENTITY_TYPE)sessionId{
+    [globalTPool pauseSession:sessionId];
+}
++(void)pauseAllGloball{
+    [[ASFKGlobalThreadpool sharedManager]  pauseAll];
+}
+/*!
+ @brief flushes all queued items for all sessions created by this instance.
+ */
+-(void)resumeAll{
+    [lkNonLocal lock];
+    for (id s in ctrlblocks) {
+        [globalTPool  resumeSession:s];
+    }
+    [lkNonLocal unlock];
+}
+-(void)resumeSession:(ASFK_IDENTITY_TYPE)sessionId{
+    [globalTPool resumeSession:sessionId];
+}
++(void)resumeAllGlobally{
+    [[ASFKGlobalThreadpool sharedManager]  resumeAll];
+}
+
+-(BOOL) isPausedSession:(ASFK_IDENTITY_TYPE)sessionId{
+    return [globalTPool  isPausedSession:sessionId];
+}
+
 -(BOOL)isBusySession:(id)sessionId{
     return [globalTPool  isBusySession:sessionId];
 }
 
 -(BOOL)isReady{
-
     return YES;
 }
 
@@ -151,10 +197,22 @@
     }
 }
 
+
 -(NSDictionary* _Nonnull) createSession:(ASFKExecutionParams*_Nullable) exparams sessionId:(id _Nullable ) sid {
     uint64 main_t1=[ASFKBase getTimestamp];
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
     ASFKParamSet* params=[self _decodeExParams:exparams forSession:sid];
+    if(!params.summary)
+    {
+        params.summary = sumproc;
+    }
+    if(!params.procs || [params.procs count]==0)
+    {
+        params.procs = [_backprocs copy];
+    }
+    if(!params.cancProc){
+        params.cancProc = cancelproc;
+    }
 
     //test params
     if(params.procs==nil
@@ -170,9 +228,11 @@
                  kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                  kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
     }
-    if(params.sessionId){}
-    else{
+    if(!sid){
         params.sessionId=[ASFKBase generateIdentity];
+    }
+    else{
+        params.sessionId=sid;
     }
     //create new session
     ASFKPipelineSession* seq=[self _createNewSessionWithId:params.sessionId];
@@ -217,7 +277,7 @@
 -(NSDictionary*) _castArray:(ASFKParamSet*)params{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
-    //dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
+
     if (
         params.sessionId==nil
         ||[params.sessionId isKindOfClass:[NSNull class]]
@@ -225,7 +285,6 @@
         ||[params.input isKindOfClass:[NSNull class]]
         ||[params.input count]<1
         ){
-        //dispatch_semaphore_signal(semHighLevelCall);
         uint64 main_t2=[ASFKBase getTimestamp];
         double elapsed=(main_t2-main_t1)/1e9;
         EASFKLog(@"ASFKPipelinePar:Some of input parameters are invalid for session %@",params.sessionId);
@@ -236,17 +295,16 @@
                  kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
     }
     ASFKLog(@"Performing non-blocking call");
-    BOOL created=NO;
-    ASFKPipelineSession* s=[self _resolveSessionforParams:params sessionCreated:created];
+
+    ASFKPipelineSession* s=[self _resolveSessionforParams:params ];
     if(s){
-        if(params.hasForeignProcs){
+        //if(params.hasForeignProcs){
             if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
                 [s setExpirationCondition:params.excond];
             }
-            [self _prepareSession:s withParams:params];
-            [globalTPool addSession:s withId:s.sessionId];
+
             [globalTPool postDataAsArray:params.input forSession:s.sessionId];
-            //[self registerSession:[s getControlBlock]];
+
             uint64 main_t2=[ASFKBase getTimestamp];
             double elapsed=(main_t2-main_t1)/1e9;
             
@@ -255,7 +313,7 @@
                      kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                      kASFKReturnSessionId:s.sessionId,
                      kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
-        }
+        //}
     }
     uint64 main_t2=[ASFKBase getTimestamp];
     double elapsed=(main_t2-main_t1)/1e9;
@@ -266,19 +324,19 @@
              kASFKReturnSessionId:[NSNull null],
              kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
              kASFKReturnDescription:@"Some of input parameters are invalid: missing data or Routines or summary"};
-    //dispatch_semaphore_signal(semHighLevelCall);
+
 }
 -(NSDictionary*) _castOrderedSet:(ASFKParamSet *)params{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
-    //dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
+
     if (
         params.sessionId==nil
         ||[params.sessionId isKindOfClass:[NSNull class]]
         ||params.input==nil
         ||[params.input isKindOfClass:[NSNull class]]
         ||[params.input count]<1
-
+        
         ){
 
         uint64 main_t2=[ASFKBase getTimestamp];
@@ -291,17 +349,15 @@
                  kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
     }
     ASFKLog(@"Performing non-blocking call");
-    BOOL created=NO;
-    ASFKPipelineSession* s=[self _resolveSessionforParams:params sessionCreated:created];
+
+    ASFKPipelineSession* s=[self _resolveSessionforParams:params ];
     if(s){
-        if(params.hasForeignProcs){
+        //if(params.hasForeignProcs){
             
             if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
                 [s setExpirationCondition:params.excond];
             }
-            [globalTPool  addSession:s withId:s.sessionId];
             [globalTPool  postDataAsOrderedSet:params.input forSession:s.sessionId];
-            [self _prepareSession:s withParams:params];
 
             uint64 main_t2=[ASFKBase getTimestamp];
             double elapsed=(main_t2-main_t1)/1e9;
@@ -311,7 +367,7 @@
                      kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                      kASFKReturnSessionId:s.sessionId,
                      kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
-        }
+        //}
     }
     uint64 main_t2=[ASFKBase getTimestamp];
     double elapsed=(main_t2-main_t1)/1e9;
@@ -326,14 +382,14 @@
 -(NSDictionary*) _castUnorderedSet:(ASFKParamSet *)params{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
-    //dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
+
     if (
         params.sessionId==nil
         ||[params.sessionId isKindOfClass:[NSNull class]]
         ||params.input==nil
         ||[params.input isKindOfClass:[NSNull class]]
         ||[params.input count]<1
-
+        
         ){
 
         uint64 main_t2=[ASFKBase getTimestamp];
@@ -346,18 +402,17 @@
                  kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
     }
     ASFKLog(@"Performing non-blocking call");
-    BOOL created=NO;
-    ASFKPipelineSession* s=[self _resolveSessionforParams:params sessionCreated:created];
+
+    ASFKPipelineSession* s=[self _resolveSessionforParams:params];
     if(s){
-        if(params.hasForeignProcs){
+       // if(params.hasForeignProcs){
             
             if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
                 [s setExpirationCondition:params.excond];
             }
-            [self _prepareSession:s withParams:params];
-            [globalTPool  addSession:s withId:s.sessionId];
-            [globalTPool  postDataAsUnorderedSet:params.input forSession:s.sessionId];
 
+            [globalTPool  postDataAsUnorderedSet:params.input forSession:s.sessionId];
+            
             uint64 main_t2=[ASFKBase getTimestamp];
             double elapsed=(main_t2-main_t1)/1e9;
             
@@ -366,7 +421,7 @@
                      kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                      kASFKReturnSessionId:s.sessionId,
                      kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
-        }
+        //}
     }
     uint64 main_t2=[ASFKBase getTimestamp];
     double elapsed=(main_t2-main_t1)/1e9;
@@ -389,7 +444,7 @@
         ||params.input==nil
         ||[params.input isKindOfClass:[NSNull class]]
         ||[params.input count]<1
-
+        
         
         ){
         
@@ -403,16 +458,14 @@
                  kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
     }
     ASFKLog(@"Performing non-blocking call");
-    BOOL created=NO;
-    ASFKPipelineSession* s=[self _resolveSessionforParams:params sessionCreated:created];
+
+    ASFKPipelineSession* s=[self _resolveSessionforParams:params ];
     if(s){
-        if(params.hasForeignProcs){
             
             if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
                 [s setExpirationCondition:params.excond];
             }
-            [self _prepareSession:s withParams:params];
-            [globalTPool  addSession:s withId:s.sessionId];
+
             [globalTPool  postDataAsDictionary:params.input forSession:s.sessionId];
 
             uint64 main_t2=[ASFKBase getTimestamp];
@@ -423,7 +476,7 @@
                      kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                      kASFKReturnSessionId:s.sessionId,
                      kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
-        }
+        //}
     }
     uint64 main_t2=[ASFKBase getTimestamp];
     double elapsed=(main_t2-main_t1)/1e9;

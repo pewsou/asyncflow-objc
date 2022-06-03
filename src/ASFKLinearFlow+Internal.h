@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+//  Created by Boris Vigman on 15/02/2019.
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -27,7 +27,7 @@
 @property (nonatomic) ASFKExpirationCondition* excond;
 @property (nonatomic) id input;
 @property (nonatomic) ASFK_IDENTITY_TYPE sessionId;
-@property (nonatomic) BOOL hasForeignProcs;
+
 @end
 
 @interface ASFKLinearFlow (Internal)

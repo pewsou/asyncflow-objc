@@ -51,6 +51,7 @@
     };
     cancelproc=nil;
     progressProc=nil;
+    semHighLevelCall=dispatch_semaphore_create(1);
 }
 -(NSUInteger) getRoutinesCount{
     [lkNonLocal lock];
@@ -191,9 +192,9 @@
 #pragma mark - Non-blocking methods
 -(NSDictionary*) castOrderedSet:(NSOrderedSet*)set session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
-    params=[self _convertInputOrderedSet:set to:params];
+    ASFKParamSet* params=[ASFKParamSet new];
     params.sessionId=sessionId;
+    params=[self _convertInputOrderedSet:set to:params];
     dispatch_semaphore_signal(semHighLevelCall);
     NSDictionary* res= [self _castOrderedSet:params];
     
@@ -201,9 +202,9 @@
 }
 -(NSDictionary*) castUnorderedSet:(NSSet*)set session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil ];
-    params=[self _convertInputUnorderedSet:set to:params];
+    ASFKParamSet* params=[ASFKParamSet new];
     params.sessionId=sessionId;
+    params=[self _convertInputUnorderedSet:set to:params];
     dispatch_semaphore_signal(semHighLevelCall);
     NSDictionary* res= [self _castUnorderedSet:params];
     
@@ -211,10 +212,10 @@
 }
 -(NSDictionary*) castArray:(NSArray*)array session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
+    ASFKParamSet* params=[ASFKParamSet new];
+    params.sessionId=sessionId;
     params=[self _convertInputArray:array to:params];
     dispatch_semaphore_signal(semHighLevelCall);
-    params.sessionId=sessionId;
     
     NSDictionary* res= [self _castArray:params];
     
@@ -223,10 +224,10 @@
 
 -(NSDictionary*) castDictionary:(NSDictionary*)dictionary session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
+    ASFKParamSet* params=[ASFKParamSet new];
+    params.sessionId=sessionId;
     params=[self _convertInputDictionary:dictionary to:params];
     dispatch_semaphore_signal(semHighLevelCall);
-    params.sessionId=sessionId;
     NSDictionary* res= [self _castDictionary:params];
     
     return res;
@@ -234,9 +235,9 @@
 
 -(NSDictionary*) castObject:(id)uns session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
-    params=[self _convertInput:uns to:params];
+    ASFKParamSet* params=[ASFKParamSet new];
     params.sessionId=sessionId;
+    params=[self _convertInput:uns to:params];
     dispatch_semaphore_signal(semHighLevelCall);
     NSDictionary* res= [self _castArray:params];
     return res;
@@ -244,9 +245,9 @@
 #pragma mark - Blocking methods
 -(NSDictionary*) callOrderedSet:(NSOrderedSet*)set session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
-    params=[self _convertInputOrderedSet:set to:params];
+    ASFKParamSet* params=[ASFKParamSet new];
     params.sessionId=sessionId;
+    params=[self _convertInputOrderedSet:set to:params];
     dispatch_semaphore_signal(semHighLevelCall);
     NSDictionary* res= [self _callOrderedSet:params];
     
@@ -254,9 +255,9 @@
 }
 -(NSDictionary*) callUnorderedSet:(NSSet*)set session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
-    params=[self _convertInputUnorderedSet:set to:params];
+    ASFKParamSet* params=[ASFKParamSet new];
     params.sessionId=sessionId;
+    params=[self _convertInputUnorderedSet:set to:params];
     dispatch_semaphore_signal(semHighLevelCall);
     
     NSDictionary* res= [self _callUnorderedSet:params];
@@ -266,9 +267,9 @@
 
 -(NSDictionary*) callArray:(NSArray*)array session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
-    params=[self _convertInputArray:array to:params];
+    ASFKParamSet* params=[ASFKParamSet new];
     params.sessionId=sessionId;
+    params=[self _convertInputArray:array to:params];
     dispatch_semaphore_signal(semHighLevelCall);
     NSDictionary* res= [self _callArray:params];
     
@@ -277,9 +278,9 @@
 
 -(NSDictionary*) callDictionary:(NSDictionary*)dictionary session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
-    params=[self _convertInputDictionary:dictionary to:params];
+    ASFKParamSet* params=[ASFKParamSet new];
     params.sessionId=sessionId;
+    params=[self _convertInputDictionary:dictionary to:params];
     dispatch_semaphore_signal(semHighLevelCall);
     NSDictionary* res= [self _callDictionary:params];
 
@@ -288,9 +289,9 @@
 
 -(NSDictionary*) callObject:(id)uns session:(id)sessionId exParam:(ASFKExecutionParams*)ex{
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:ex forSession:nil];
-    params=[self _convertInput:uns to:params];
+    ASFKParamSet* params=[ASFKParamSet new];
     params.sessionId=sessionId;
+    params=[self _convertInput:uns to:params];
     dispatch_semaphore_signal(semHighLevelCall);
     NSDictionary* res= [self _callArray:params];
     return res;
@@ -311,11 +312,11 @@
 - (NSDictionary *)stepNonblockingWithData:(id)data {
     NSDictionary* result=nil;
     if([data isKindOfClass:[NSDictionary class]]){
-        
+        //result=[self castDictionary:data exParam:nil];
     }else if([data isKindOfClass:[NSArray class]]){
-        
+        //result=[self castArray:data exParam:nil];
     }else{
-        
+        //result=[self castObject:data exParam:nil];
     }
     return result;
 }
@@ -336,13 +337,20 @@
         expar.cancProc = ex->cancellationProc?ex->cancellationProc:cancelproc;
         expar.excond=ex->expCondition;
         expar.progress = ex->progressProc?ex->progressProc:progressProc;
-        if(sessionId){
-            expar.sessionId=sessionId;
-        }
-        else{
-            expar.sessionId=nil;
-        }
+        expar.sessionId=sessionId;
     }
+//    else{
+//        expar.summary = sumproc;
+//        expar.procs = [_backprocs copy];
+//        expar.cancProc = cancelproc;
+//        
+//    }
+//    if(sessionId){
+//        expar.sessionId=sessionId;
+//    }
+//    else{
+//        expar.sessionId=[ASFKBase generateIdentity];
+//    }
     return expar;
 }
 @end

@@ -23,7 +23,6 @@
     std::atomic< BOOL> abortByCallback;
     std::atomic< BOOL> abortByCaller;
     std::atomic< BOOL> abortByInternal;
-
     std::vector<std::vector<long long>> indexes;
 }
 -(id)initWithParent:(ASFK_IDENTITY_TYPE)parentId sessionId:(ASFK_IDENTITY_TYPE) sessionId andSubId:(ASFK_IDENTITY_TYPE)subid{
@@ -66,6 +65,7 @@
     abortByCallback=NO;
     abortByCaller=NO;
     [itsLock lock];
+
     indexes.clear();
     [itsLock unlock];
 }

@@ -161,6 +161,7 @@
         self.onLeaveProc=nil;
         self.onDiscardProc=nil;
         self.feedbackProc=nil;
+        self.runOnReadProc=nil;
         _containerDeleteTimer=[ASFKConditionTemporal new];
         _containerKickoutTimer=[ASFKConditionTemporal new];
         _containerDropMsgTimer=[ASFKConditionTemporal new];
@@ -176,6 +177,7 @@
 }
 -(void) initFromProps:(ASFKMBContainerProperties*)p{
     if(p){
+        self.runOnReadProc=p.runOnReadProc;
         self.onNewMsgProc=p.onNewMsgProc;
         self.onPopProc=p.onPopProc;
         self.onReadProc=p.onReadProc;
@@ -205,16 +207,12 @@
     //}
 }
 -(void) setPropKickoutAfterSeconds:(NSTimeInterval)seconds{
-    //if( seconds>0){
         [self.containerKickoutTimer setDelay:seconds];
     [self.containerKickoutTimer delayToDeadline];
-    //}
 }
 -(void) setPropDropMsgAfterSeconds:(NSTimeInterval)seconds{
-    //if( seconds>0){
         [self.containerDropMsgTimer setDelay:seconds];
     [self.containerDropMsgTimer delayToDeadline];
-    //}
 }
 -(void) setPropDropMsgOnDate:(NSDate *)date{
      [self.containerDropMsgTimer setDueDate:date];
@@ -256,30 +254,4 @@
 }
 
 @end
-//@implementation ASFKMBBlockableMsgProperties
-//-(id) init{
-//    self=[super init];
-//    if(self){
-//        _msgReleaseTimer=[ASFKConditionTemporal new];
-//        _conditionCallRelease=nil;
-//        _callRelease=nil;;
-//    }
-//    return self;
-//}
-//-(void) setPropReleaseTimer:(ASFKConditionTemporal*)condition{
-//    _msgReleaseTimer=condition;
-//}
-//-(void) setPropCallRelease:(ASFKConditionCallRelease*)condition{
-//    _conditionCallRelease=condition;
-//}
-//-(void) setPropCallReleaseRoutine:(ASFKMbCallReleaseRoutine)routine{
-//    _callRelease=routine;
-//}
-//-(void) wait{
-//    
-//}
-//-(void) signal{
-//    
-//}
-//@end
 

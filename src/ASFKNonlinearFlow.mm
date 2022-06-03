@@ -14,26 +14,28 @@
  */
 
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//
 
-#ifndef ASFKPrjConfig_h
-#define ASFKPrjConfig_h
+#import "ASFKBase.h"
 
-#define __ASFK_DEBUG__ 1
-#define __ASFK_VERBOSE_PRINTING__ 1
+@implementation ASFKNonlinearFlow
+-(id)initWithName:(NSString*)name{
+    self=[super initWithName:name];
+    if(self){
 
-#define ASFK_PRIVSYM_TP_LOAD_FACTOR 1
-#define ASFK_PRIVSYM_QOS_CLASS QOS_CLASS_BACKGROUND
-#define ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD 100000
-#define ASFK_CALC_ELAPSED_TIME(starttime, endtime) (endtime-starttime)/double(1e9)
-
-#define ASFK_RC_DESCR_DONE @"OK"
-#define ASFK_RC_DESCR_FAILURE @"Fail"
-#define ASFK_RC_DESCR_CANCELED @"Canceled"
-#define ASFK_RC_DESCR_DEFERRED @"Deferred"
-#define ASFK_RC_DESCR_IMPROPER @"Improper"
-
-#define ASFK_STR_INVALID_PARAM @"some of input parameters are invalid"
-
-
-#endif
-/* ASFKPrjConfig_h */
+    }
+    return self;
+}
+-(BOOL) attachTrueTarget:(id<ASFKLinkable>)target withId:(ASFK_IDENTITY_TYPE)identity{
+    return YES;
+}
+-(BOOL) attachFalseTarget:(id<ASFKLinkable>)target withId:(ASFK_IDENTITY_TYPE)identity{
+    return YES;
+}
+-(BOOL) detachTrueTargetWithId:(ASFK_IDENTITY_TYPE)identity{
+    return YES;
+}
+-(BOOL) detachFalseTargetWithId:(ASFK_IDENTITY_TYPE)identity{
+    return YES;
+}
+@end

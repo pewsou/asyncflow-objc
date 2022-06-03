@@ -12,6 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 #ifndef __A_S_F_K_Mailbox_h__
@@ -285,7 +286,7 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
  @param uid user ID; if nil or not found, returns 0.
  @return Number of messages for this user; 0 if user not found.
  */
--(NSUInteger) totalMessagesForUser:(id)uid;
+-(NSUInteger) totalMessagesInMailbox:(id)uid;
 /*!
  @brief counts ALL users of some group.
  @param gid group ID; if nil or not found, returns 0.
@@ -293,7 +294,17 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
  */
 -(NSUInteger) totalUsersInGroup:(id)gid;
 #pragma mark - Reading & Popping
+/*!
+ @brief reading in blocking maner.
+ @discussion When called, the function reads all available messages; number of messages to read is defined by 'skipAndTake' range. When number of available messages is less than required, the call will not return until new messages arrive. When message from blocking call received, the calling thread is released.
+ @param skipAndTake range of retrieval; loc represents offset from beginning, number of messages to skip; length represents number of items to retrieve; if 0 then function returns when new messages arrive or waiting period expires.
+ @param mid user ID; if nil, read fails.
+ @param secret private (associated with this group) secret is required; if no secret set then nil must be provided. If provided secret does not match the stored one, operation fails.
+ @return array of available messages; size of the array is less or equal to msgcount; if there is no message, returns empty array.
+ */
+-(NSArray*) waitAndReadMsg:(NSRange)skipAndTake fromMailbox:(id)mid unblockIf:(ASFKMbLockConditionRoutine)condition withSecret:(ASFKPrivateSecret*)secret;
 
+//-(NSArray*) waitAndReadMsgFromGroup:(id)gid unblockIf:(ASFKMbLockConditionRoutine) condition withSecret:(ASFKPrivateSecret*)secret;
 /*!
  @brief reads specified number of earliest messages delivered to given mailbox.
  @discussion After reading messages are NOT deleted from the queue; fetched messages ordered earliest to latest. If messages arrives from blocking call - the corresponding message is read, calling thread is NOT released.
@@ -366,6 +377,16 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
  @param secret private (associated with this group) or group secret is required; if no secret set then nil must be provided. If prided secret does not match the stored one, operation fails.
  */
 -(void) popEarliestMsg:(NSRange)skipAndTake fromGroup:(id)gid forUser:(id)uid withSecret:(ASFKPrivateSecret*)secret;
+#pragma mark - Call interface
+/*!
+ @brief delivers specified message synchronously to the specified mailbox. This method returns when the message when call was improper or message read by the receiver. Being invoked, this method blocks the calling thread, until some message read or a condition met. Examples of unblocking conditions: time period elapsed; or some custom condition may be introduced.
+ @discussion delivered message can not be retracted.
+ @param msg a message to be delivered; can be nil.
+ @param uid user ID; may be nil.
+ @param props properties of message; can be nil.
+ @return message's ID for successful delivery, nil otherwise.
+ */
+-(id) call:(id)msg forMailbox:(id)uid withProperties:(ASFKMBMsgProperties*)props unblockIf:(ASFKCondition*)condition secret:(ASFKSecret*)secret;;
 
 #pragma mark - Cast interface/Unicasting
 /*!
@@ -376,7 +397,7 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
  @param props properties of message; can be nil.
  @return message's ID for successful delivery, nil otherwise.
  */
--(id) cast:(id)msg forMailbox:(id)uid withProperties:(ASFKMBMsgProperties*)props secret:(ASFKMasterSecret*)secret;;
+-(id) cast:(id)msg forMailbox:(id)uid withProperties:(ASFKMBMsgProperties*)props secret:(ASFKSecret*)secret;;
 #pragma mark - Cast interface/Multicasting
 /*!
  @brief delivers specified message asynchronously to ALL users registered in specific group.
@@ -403,11 +424,6 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
  @return YES for successful delivery, NO otherwise.
  */
 -(BOOL) broadcast:(id)msg withProperties:(ASFKMBMsgProperties*)props secret:(ASFKSecret*)secret;;
-/*!
- @brief retracts delivered message from specific group.
- @discussion poster can retract posted message while it is available for retraction;the message is available for retraction until it has been popped or its lifetime has ended.
- @param msgId retractable message ID; if nil, action fails.
- @param gid group ID; if nil, action fails.
- */
+
 @end
 #endif /*#define __A_S_F_K_Mailbox_h__*/

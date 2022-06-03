@@ -61,6 +61,7 @@
     }
     return ps;
 }
+
 @end
 
 @implementation ASFKParamSet
@@ -72,8 +73,6 @@
         self.cancProc=nil;
         self.input=nil;
         self.excond=nil;
-        self.hasForeignProcs=NO;
-        //self.customSessionId=nil;
         self.sessionId=nil;
     }
     return self;

@@ -12,7 +12,6 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 #ifndef ASFKLinearFlow_h
@@ -91,11 +90,11 @@
 @end
 
 @interface ASFKLinearFlow : ASFKBase<ASFKRoutable,ASFKLinkable,ASFKSynchronous,ASFKAsynchronous>{
-@protected
-    NSMutableArray<ASFKExecutableRoutine> * _backprocs;
-    NSArray<ASFKExecutableRoutine> *lfProcs;
-    ASFKCancellationRoutine cancelproc;
-    ASFKExecutableRoutineSummary sumproc;
+    @protected NSMutableArray<ASFKExecutableRoutine> * _backprocs;
+    @protected NSArray<ASFKExecutableRoutine> *lfProcs;
+    @protected ASFKCancellationRoutine cancelproc;
+    @protected ASFKExecutableRoutineSummary sumproc;
+    @protected dispatch_semaphore_t semHighLevelCall;
 }
 -(NSArray<ASFKExecutableRoutine> *) getRoutines;
 -(NSUInteger) getRoutinesCount;

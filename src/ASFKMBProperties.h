@@ -12,13 +12,19 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+//
+//  Created by Boris Vigman on 16/05/2021.
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>
 #import "ASFKExpirationCondition.h"
 #include <atomic>
-
+//typedef enum e_ASFKMBPoppingPolicy{
+//    e_ASFKMB_POP_OWNER_ONLY,
+//    e_ASFKMB_POP_FIRST_POPPER
+//} eASFKMBPoppingPolicy;
+typedef void(^ASFKMbNRunOnContainerReadRoutine)(id cId,NSDate* tstamp, NSArray* data);
 /*!
  @brief custom filter of incoming messages.
  @discussion custom Routine that filters accepted messages. User can review all accepted messages and select some subset to be removed. After this call ended, the selected messages will be removed from collection.
@@ -36,7 +42,7 @@ typedef void(^ASFKMbNotifyOnContainerDiscardRoutine)(id cId,NSDate* tstamp);
  @brief notification on incoming messages.
  @discussion custom Routine that notifies user about incoming message.
  @param cId group/user ID.
- @param newMsg handle of the new message before it was accepted.
+ @param newMsgCount up-to-date message count.
  */
 typedef void(^ASFKMbNotifyOnNewMsgRoutine)(id cId, NSUInteger newMsgCount);
 typedef void(^ASFKMbNotifyOnContainerPopRoutine)(id cId,NSArray* popped,NSUInteger left);
@@ -66,7 +72,6 @@ typedef void(^ASFKMbMsgFeedbackProc)(id cId, NSDate* timepoint, id msg);
 /*!
  @brief Group membership duration, greater than zero. After this period member will automatically leave the group. Negative value ignored.
  */
-//@property (nonatomic,readonly) NSTimeInterval leaveAfterSeconds;
 @property (nonatomic,readonly) ASFKConditionTemporal* grpMemLeaveTimer;
 /*!
  @brief set Group membership leaving date. Nil or date lesser than or equal to current time lead to invalidation of underlying properties.
@@ -87,6 +92,7 @@ typedef void(^ASFKMbMsgFeedbackProc)(id cId, NSDate* timepoint, id msg);
 #pragma mark - Group/Container Props
 @interface ASFKMBContainerProperties :NSObject
 -(void) initFromProps:(ASFKMBContainerProperties*)p;
+@property ASFKMbNRunOnContainerReadRoutine runOnReadProc;
 /*!
  @brief Indication of whether addition of new members to a group is allowed. NO for permission.
  @discussion When applied to standalone mailbox, no effect expected.
@@ -262,4 +268,3 @@ typedef void(^ASFKMbMsgFeedbackProc)(id cId, NSDate* timepoint, id msg);
 @end
 
 typedef void(^ASFKMbCallReleaseRoutine)();
-

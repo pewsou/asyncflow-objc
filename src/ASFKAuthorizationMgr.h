@@ -18,6 +18,7 @@
 #import <Foundation/Foundation.h>
 #import "ASFKMBSecret.h"
 @interface ASFKAuthorizationMgr : NSObject{
+    @public ASFKSecretComparisonProc secretProcConfig;
     @public ASFKSecretComparisonProc secretProcCreate;
     @public ASFKSecretComparisonProc secretProcDiscard;
     @public ASFKSecretComparisonProc secretProcRead;
@@ -26,7 +27,8 @@
     @public ASFKSecretComparisonProc secretProcUnicast;
     @public ASFKSecretComparisonProc secretProcMulticast;
     @public ASFKSecretComparisonProc secretProcHost;
-    @public ASFKSecretComparisonProc secretProcConfig;
+    @public ASFKSecretComparisonProc secretProcIssuer;
+    @public ASFKSecretComparisonProc secretProcModerate;
 
 }
 @property (readonly) ASFKMasterSecret* masterSecret;
@@ -48,5 +50,8 @@
 -(BOOL) matchHostSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther;
 -(BOOL) matchSecuritySecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther;
 -(BOOL) matchConfigSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther;
+-(BOOL) matchIssuerSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther;
+-(BOOL) matchModeratorSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther;
+
 
 @end

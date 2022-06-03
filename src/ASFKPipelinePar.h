@@ -12,6 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -23,6 +24,7 @@
  */
 @interface ASFKPipelinePar : ASFKLinearFlow
 
+-(BOOL) isPausedSession:(ASFK_IDENTITY_TYPE)sessionId;
 
 /*!
  @brief Equals YES if session with given identity exists AND is still processing data batch ; NO otherwise.
@@ -30,6 +32,7 @@
 -(BOOL) isBusySession:(ASFK_IDENTITY_TYPE)sessionId;
 
 +(long long) runningSessionsCount;
++(long long) pausedSessionsCount;
 /*!
  @brief Cancels ALL sessions created by ALL instances.
  */
@@ -53,7 +56,32 @@
  @brief flushes all queued items for all sessions.
  */
 +(void)flushAllGlobally;
+/*!
+ @brief flushes all queued items for all sessions created by this instance.
+ */
+-(void)pauseAll;
+/*!
+ @brief flushes all queued items for given session ID.
+ */
+-(void)pauseSession:(ASFK_IDENTITY_TYPE)sessionId;
 
+/*!
+ @brief flushes all queued items for all sessions.
+ */
++(void)pauseAllGlobally;
+/*!
+ @brief flushes all queued items for all sessions created by this instance.
+ */
+-(void)resumeAll;
+/*!
+ @brief flushes all queued items for given session ID.
+ */
+-(void)resumeSession:(ASFK_IDENTITY_TYPE)sessionId;
+
+/*!
+ @brief flushes all queued items for all sessions.
+ */
++(void)resumeAllGlobally;
 /*!
  @brief sets new class of QoS (i.e. thread priority).
  @param newqos required class of Quality of Service . Allowed values are:QOS_CLASS_USER_INTERACTIVE, QOS_CLASS_UTILITY, QOS_CLASS_BACKGROUND. By default QOS_CLASS_BACKGROUND is set. The parameter will be in effect after restart.

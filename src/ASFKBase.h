@@ -12,14 +12,13 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>
 #import "ASFKPrjConfig.h"
 
-#define ASFK_VERSION @"0.2.1"
+#define ASFK_VERSION @"0.2.2"
 #define ASFK_IDENTITY_TYPE id
 
 #ifdef __ASFK_VERBOSE_PRINTING__
@@ -64,13 +63,13 @@
 
 #define kASFKReturnResult @"asfk_ret_result"
 #define ASFK_RET_SUMRESULT @"asfk_ret_sumresult"
-
 #define ASFK_RET_NEXT_TARGET @"asfk_ret_nextTarget"
 #define kASFKReturnSessionId @"asfk_ret_sessionId"
 #define kASFKReturnDescription @"asfk_ret_description"
 
 #define kASFKReturnStatsTimeProcsElapsedSec @"asfk_ret_stats_procs_tesec"
 #define kASFKReturnStatsTimeSessionElapsedSec @"asfk_ret_stats_session_tesec"
+
 
 #define kASFKProgressRoutine @"progress_proc"
 #define kASFKCancelRoutine @"cancel_proc"
@@ -151,11 +150,13 @@ typedef id ( ^ASFKProgressRoutine)(NSUInteger stage,NSUInteger accomplished ,NSU
 @end
 
 @interface ASFKControlBlock : NSObject<ASFKControlStarter,ASFKControlCallback>{
+
     @protected std::atomic<NSUInteger> itsResPosition;
     @protected NSUInteger totalProcessors;
     @protected NSLock* itsLock;;
     @protected ASFKProgressRoutine itsProgressProc;
     @protected std::atomic<NSUInteger> indexSecondary;
+
     @public std::atomic< BOOL> flushed;
     @public std::atomic< BOOL> paused;
 }
@@ -174,7 +175,6 @@ typedef id ( ^ASFKExecutableRoutine)(id<ASFKControlCallback> controlBlock, id da
 
 typedef id ( ^ASFKExecutableRoutineSummary)(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data);
 typedef id ( ^ASFKCancellationRoutine)(id identity);
-
 
 /**
  @param controlBlock object controlling the execution
@@ -228,7 +228,6 @@ typedef BOOL  ( ^ASFKExecutableRoutineLoopConditional)(id<ASFKControlCallback> c
     @protected double totalSessionsTime;
     @protected ASFKProgressRoutine progressProc;
     @protected NSMutableDictionary* priv_statistics;
-    @protected dispatch_semaphore_t semHighLevelCall;
 }
 @property (readonly) NSString* itsName;
 @property (readonly) double totalTimeSeconds;
@@ -276,6 +275,7 @@ typedef BOOL  ( ^ASFKExecutableRoutineLoopConditional)(id<ASFKControlCallback> c
 }
 @end
 
+#import "ASFKNonlinearFlow.h"
 #import "ASFKLinearFlow.h"
 @interface ASFKQueue : ASFKLinearFlow{
 @protected NSLock* lock;
@@ -298,11 +298,55 @@ typedef BOOL  ( ^ASFKExecutableRoutineLoopConditional)(id<ASFKControlCallback> c
 -(void) unoccupy;
 @end
 
+typedef enum enumASFKPipelineExecutionStatus{
+    eASFK_ES_HAS_MORE=0,
+    eASFK_ES_HAS_NONE,
+    eASFK_ES_WAS_CANCELLED,
+    eASFK_ES_SKIPPED_MAINT
+} eASFKThreadpoolExecutionStatus;
+
+@interface ASFKThreadpoolSession : ASFKBase{
+    @public     ASFKControlBlock* cblk;
+    @protected ASFKExecutableRoutineSummary passSummary;
+    @protected ASFKExecutableRoutineSummary expirationSummary;
+    @protected ASFKCancellationRoutine cancellationHandler;
+    @protected NSMutableArray<ASFKExecutableRoutine>* procs;
+    @protected ASFKExpirationCondition* excond;
+    @public    std::atomic<BOOL> isStopped;
+    @public    std::atomic<BOOL> paused;
+}
+@property  ASFK_IDENTITY_TYPE sessionId;
+
+-(ASFKControlBlock*) getControlBlock;
+-(id)initWithSessionId:(ASFK_IDENTITY_TYPE)sessionId andSubsessionId:(ASFK_IDENTITY_TYPE)subId;
+-(void) flush;
+-(void) cancel;
+-(void) postDataItemsAsArray:(NSArray*)array;
+-(void) postDataItemsAsOrderedSet:(NSOrderedSet*)set;
+-(void) postDataItemsAsUnorderedSet:(NSSet*)set;
+-(void) postDataItemsAsDictionary:(NSDictionary*)dict;
+-(void) postDataItem:(id)dataItem;
+-(void) addRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)procs;
+-(void) replaceRoutinesWithArray:(NSArray<ASFKExecutableRoutine>*)procs;
+-(void) setProgressRoutine:(ASFKProgressRoutine)progress;
+-(void) setSummary:(ASFKExecutableRoutineSummary)sum;
+-(void) setExpirationSummary:(ASFKExecutableRoutineSummary)sum;
+-(eASFKThreadpoolExecutionStatus) select:(long)selector routineCancel:(ASFKCancellationRoutine)cancel;
+-(void) setCancellationHandler:(ASFKCancellationRoutine)cru;
+-(void) setExpirationCondition:(ASFKExpirationCondition*) trop;
+-(BOOL) hasSessionSummary;
+
+-(BOOL) isBusy;
+
+-(long) procsCount;
+-(long) itemsCount;
+
+@end
+
 #import "ASFKFilter.h"
 #import "ASFKFilteringQueue.h"
 #import "ASFKMailbox.h"
 #import "ASFKPipelinePar.h"
-
 
 
 

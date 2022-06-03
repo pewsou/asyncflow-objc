@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+//
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 #define ASFK_LOCAL_REPLACE 0
@@ -41,20 +41,13 @@ public:
 
 @end
 @implementation ASFKPipelineSession{
-    std::atomic<BOOL> isStopped;
-    ASFKExpirationCondition* excond;
+    
     std::atomic<long> busyCount;
     NSMutableArray<ASFKThreadpoolQueue*>* dataQueues;
-    ASFKThreadpoolQueue* queueZero;
-    NSMutableArray<ASFKExecutableRoutine>* procs;
-    NSMutableArray* intermediateProcs;
-    ASFKExecutableRoutineSummary passSummary;
-    ASFKExecutableRoutineSummary expirationSummary;
-    ASFKProgressRoutine progressProc;
-    ASFKCancellationRoutine cancellationHandler;
-    NSLock* lock;
     NSRange execRange;
     std::priority_queue<sASFKPrioritizedQueueItem, std::vector<sASFKPrioritizedQueueItem>, ASFKComparePriorities> pq;
+    ASFKThreadpoolQueue* queueZero;
+    NSLock* lock;
 }
 -(id)init{
     self=[super init];
@@ -64,7 +57,7 @@ public:
     return self;
 }
 -(id)initWithSessionId:(ASFK_IDENTITY_TYPE)sessionId andSubsessionId:(ASFK_IDENTITY_TYPE)subId{
-    self=[super init];
+    self=[super initWithSessionId:sessionId andSubsessionId:subId];
     if(self){
         [self _PSinitWithSession:sessionId andSubsession:subId];
     }
@@ -81,14 +74,15 @@ public:
     dataQueues=[NSMutableArray array];
     queueZero=[[ASFKThreadpoolQueue alloc]init];
     if(sessionId){
-        cblk= [self newSession:sessionId andSubsession:subId];// [ASFKControlBlock new];
+        cblk= [self newSession:sessionId andSubsession:subId];
     }else{
-        cblk= [self newSession];// [ASFKControlBlock new];
+        cblk= [self newSession];
     }
     
     self.sessionId=cblk.sessionId;
 
-    intermediateProcs=[NSMutableArray array];
+    
+    //intermediateProcs=[NSMutableArray array];
     passSummary=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
         ASFKLog(@"ASFKPipelineSession: Stub summary");
         return data;
@@ -260,94 +254,24 @@ public:
 
 }
 -(void) addRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)ps{
-    if([ps count]>0){
-        //ready=NO;
-    [lock lock];
-    [intermediateProcs addObject:@[@(ASFK_LOCAL_ADD),@([ps count]),ps]];
-    [lock unlock];
-    DASFKLog(@"Scheduled for addition %ld procs",[ps count]);
 
-    }
 }
 -(void) replaceRoutinesWithArray:(NSArray<ASFKExecutableRoutine>*)ps{
-    //ready=NO;
+
     [lock lock];
-    long psc=[ps count];
-    long procsc=[procs count];
-    [intermediateProcs addObject:@[@(ASFK_LOCAL_REPLACE),@(procsc-psc),ps]];
+    [procs removeAllObjects];
+    [procs addObjectsFromArray:ps];
+    [dataQueues removeAllObjects];
+    for (ASFKExecutableRoutine er in ps) {
+        [dataQueues addObject:[ASFKThreadpoolQueue new]];
+    }
+
     [lock unlock];
 
     DASFKLog(@"Scheduled for replacement %ld procs",[ps count]);
 
 }
--(void)_updateRoutines{
-    for (NSArray* ar in intermediateProcs)
-    {
-        if([[ar objectAtIndex:0]integerValue ]==ASFK_LOCAL_REPLACE){
-            if([[ar objectAtIndex:2]count]>0)
-            {
-                long dqs=0;
-                if(dataQueues){
-                    if([dataQueues count]>0){
-                        dqs=[dataQueues count];
-                        ASFKLog(@"Removing %ld Routines",dqs);
-                        ASFKThreadpoolQueue* q=[dataQueues objectAtIndex:0];
-                        [dataQueues removeAllObjects];
-                        [dataQueues addObject:q];
-                        [q unoccupy];
-                        [procs removeAllObjects];
-                        [procs addObjectsFromArray:[ar objectAtIndex:2]];
-                        dqs = [[ar objectAtIndex:2]count];
-                        ASFKLog(@"Setting %ld Routines instead",dqs);
-                        for (; dqs>1; --dqs) {
-                            [dataQueues addObject:[ASFKThreadpoolQueue new]];
-                        }
-                    }else
-                    {
-                        [procs addObjectsFromArray:[ar objectAtIndex:2]];
-                        dqs = [[ar objectAtIndex:2]count];
-                        ASFKLog(@"Setting %ld Routines",dqs);
-                        for (; dqs>0; --dqs) {
-                            [dataQueues addObject:[ASFKThreadpoolQueue new]];
-                        }
-                    }
-                    busyCount=0;
-                }
-            }else{
-                ASFKLog(@"Removing all data queues and Routines");
-                for (ASFKThreadpoolQueue* q in dataQueues) {
-                    [q reset];
-                }
-                [dataQueues removeAllObjects];
-                [procs removeAllObjects];
-                busyCount=0;
-            }
-        }else{
-            [procs addObjectsFromArray:[ar objectAtIndex:2]];
-            long inc=[[ar objectAtIndex:1]integerValue ];
-            ASFKLog(@"Adding %ld Routines",inc);
-            for (long c=inc; c>0; --c) {
-                [dataQueues addObject:[ASFKThreadpoolQueue new]];
-            }
-        }
-        execRange=NSMakeRange(0, [dataQueues count]);
-    }
 
-    [self _resetPriorityQueue];
-    [self _adoptDataFromZeroQueue];
-
-    long c=0;
-    for (ASFKThreadpoolQueue* q in dataQueues) {
-        sASFKPrioritizedQueueItem qin;
-        qin.queueId=c;
-        qin.priority=[q count];
-        if(qin.priority>0){
-            pq.push(qin);
-        }
-        ++c;
-    }
-
-}
 
 -(BOOL) hasSessionSummary{
     [lock lock];
@@ -361,17 +285,11 @@ public:
     [self flush];
 
 }
--(void) _resetQueues{
-    for (ASFKThreadpoolQueue* q in dataQueues) {
-        [q reset];
-        [q unoccupy];
-    }
-}
+
 -(void)flush{
     [lock lock];
     cblk->flushed=YES;
     [self _resetQueues];
-
     [queueZero reset];
     [lock unlock];
     busyCount=0;
@@ -405,26 +323,13 @@ public:
     return busyCount.load()>0?YES:NO;
 }
 
--(eASFKPipelineExecutionStatus) select:(long)selector routineCancel:(ASFKCancellationRoutine)cancel{
+-(eASFKThreadpoolExecutionStatus) select:(long)selector routineCancel:(ASFKCancellationRoutine)cancel{
 
     [lock lock];
     [self _adoptDataFromZeroQueue];
-    
-    if([intermediateProcs count]>0){
-        if( isStopped.load()){
-            [self _updateRoutines];
-            isStopped=NO;
-            [intermediateProcs removeAllObjects];
-            [lock unlock];
-            return eASFK_ES_SKIPPED_MAINT;
-        }else{
-            isStopped=YES;
-            [lock unlock];
-            return eASFK_ES_SKIPPED_MAINT;
-        }
-    }
+
     if(isStopped.load()){
- 
+
         [lock unlock];
 
         return eASFK_ES_WAS_CANCELLED;
@@ -434,7 +339,7 @@ public:
         || [cblk cancellationRequestedByStarter])
 
        ){
- 
+
         [self _resetPriorityQueue];
         ASFKCancellationRoutine cru=cancellationHandler;
         [lock unlock];
@@ -445,7 +350,7 @@ public:
         [self forgetAllSessions];
         return eASFK_ES_WAS_CANCELLED;
     }
-
+    
     ASFKExecutableRoutineSummary summary;
     summary=passSummary;
     sASFKPrioritizedQueueItem qin;
@@ -485,7 +390,7 @@ public:
         ASFKExecutableRoutine eproc=[procs objectAtIndex:curpos];
         ASFKThreadpoolQueue* q=[dataQueues objectAtIndex:curpos];
         [lock unlock];
-        BOOL empty;
+        BOOL empty=NO;
 
         id result=[q pullAndOccupyWithId:selector empty:empty];
         if(result)
@@ -507,7 +412,7 @@ public:
                 }
                 [lock unlock];
                 if([cblk cancellationRequestedByCallback]|| [cblk cancellationRequestedByStarter]){
- 
+
                     [lock lock];
                     [self _resetPriorityQueue];
                     ASFKCancellationRoutine cru=cancellationHandler;
@@ -530,7 +435,6 @@ public:
                 std::vector<long long> bc={busyCount.load()};
                 if(trp && [trp isConditionMetForLonglongValues:bc data:result]){
                     ASFKLog(@"Expiring session %@",self.sessionId);
-
                     [self flush];
                     cancel(self.sessionId);
                     expirproc(cblk,@{},res);
@@ -549,7 +453,8 @@ public:
                     }
                     if([cblk flushRequested]){
                         [cblk flushRequested:NO];
-                    }else{
+                    }
+                    else{
                         [lock lock];
                         long long dco=[dataQueues count];
                         long nextQ;
@@ -604,6 +509,13 @@ public:
     
     return eASFK_ES_HAS_MORE;
 }
+#pragma mark - Private methods
+-(void) _resetQueues{
+    for (ASFKThreadpoolQueue* q in dataQueues) {
+        [q reset];
+        [q unoccupy];
+    }
+}
 -(void) _resetPriorityQueue{
     while (!pq.empty()) {
         pq.pop();
@@ -620,5 +532,22 @@ public:
         }
         [queueZero reset];
     }
+}
+-(void)_updateRoutines{
+    //empty priority queue
+    [self _resetPriorityQueue];
+    [self _adoptDataFromZeroQueue];
+    
+    long c=0;
+    for (ASFKThreadpoolQueue* q in dataQueues) {
+        sASFKPrioritizedQueueItem qin;
+        qin.queueId=c;
+        qin.priority=[q count];
+        if(qin.priority>0){
+            pq.push(qin);
+        }
+        ++c;
+    }
+    
 }
 @end

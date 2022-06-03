@@ -12,7 +12,6 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -22,9 +21,7 @@
 #include <mach/mach_time.h>
 #import "ASFKQueue+Internal.h"
 
-@implementation ASFKExecutionParams{
- 
-}
+@implementation ASFKExecutionParams{}
 -(id) init{
     self = [super init];
     if(self) {
@@ -33,11 +30,53 @@
         procs=nil;
         cancellationProc=nil;
         expCondition=nil;
+        
     }
     return self;
 }
 @end
 
+@implementation ASFKThreadpoolSession
+-(id)init{
+    self=[super init];
+    if(self){
+        [self _TPSinitWithSession:nil andSubsession:nil];
+    }
+    return self;
+}
+-(id)initWithSessionId:(ASFK_IDENTITY_TYPE)sessionId andSubsessionId:(ASFK_IDENTITY_TYPE)subId{
+    self=[super init];
+    if(self){
+        [self _TPSinitWithSession:sessionId andSubsession:subId];
+    }
+    return self;
+}
+-(void)_TPSinitWithSession:(ASFK_IDENTITY_TYPE)sessionId andSubsession:(ASFK_IDENTITY_TYPE)subId{
+    procs=[NSMutableArray array];
+    excond=[[ASFKExpirationCondition alloc]init];
+    isStopped=NO;
+    paused=NO;
+    if(sessionId){
+        cblk= [self newSession:sessionId andSubsession:subId];
+    }else{
+        cblk= [self newSession];
+    }
+    
+    self.sessionId=cblk.sessionId;
+    passSummary=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
+        ASFKLog(@"ASFKPipelineSession: Stub summary");
+        return data;
+    };
+    expirationSummary=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
+        ASFKLog(@"ASFKPipelineSession: Stub expiration summary");
+        return data;
+    };
+    cancellationHandler=^id(id identity){
+        return nil;
+    };
+}
+
+@end
 
 @implementation ASFKGlobalQueue{
     NSMutableArray* mQ;
@@ -59,8 +98,6 @@
 - (id)init {
     self = [super init];
     if (self) {
-        NSUInteger pr=[[NSProcessInfo processInfo] activeProcessorCount]*ASFK_TP_LOAD_FACTOR;
-        ASFKLog(@"ASFK: Active processors: %lu detected",(unsigned long)pr);
         lock=[NSLock new];
         dConQ_UserInteractive=dispatch_get_global_queue(
                         QOS_CLASS_USER_INTERACTIVE, 0);
@@ -143,7 +180,7 @@
     _sources=_priv_sources;
     _targets=_priv_targets;
     lkNonLocal=[NSLock new];
-    semHighLevelCall=dispatch_semaphore_create(1);
+    
     ctrlblocks=[NSMutableDictionary new];
 }
 -(NSDictionary*)getStatistics{
@@ -156,7 +193,7 @@
 -(void)cancelAll{
     [lkNonLocal lock];
     [ctrlblocks enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
-        ASFKControlBlock* cb = (ASFKControlBlock*)obj;
+        ASFKControlBlock* cb = (ASFKControlBlock*)obj;// [ctrlblocks objectForKey:key];
         if(cb){
             [cb cancel];
         }else{

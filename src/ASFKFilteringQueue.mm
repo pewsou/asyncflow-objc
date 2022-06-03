@@ -23,7 +23,6 @@
     std::atomic<NSUInteger> maxQSize;
     std::atomic<NSUInteger> minQSize;
     ASFKFilter* itsFilter;
-
 }
 -(id)init{
     self=[super init];
@@ -81,11 +80,11 @@
         [lkNonLocal unlock];
         
         [mis removeAllIndexes];
-        
 
     }
     return r;
 }
+
 -(BOOL)push:(id)item{
     BOOL res=NO;
     if(item){

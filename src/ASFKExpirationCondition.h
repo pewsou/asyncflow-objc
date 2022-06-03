@@ -71,6 +71,7 @@
  */
 -(ASFKConditionTemporal*) chooseEarliest:(ASFKConditionTemporal*)cond;
 
+
 @end
 #pragma mark - Expiration conditions
 @interface ASFKExpirationCondition : ASFKCondition

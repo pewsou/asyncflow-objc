@@ -18,7 +18,6 @@
 #import "ASFKBase.h"
 
 @interface ASFKControlBlock (Internal)
-
 -(void) setResultPosition:(NSUInteger)proc;
 
 -(NSUInteger) getResultPosition;

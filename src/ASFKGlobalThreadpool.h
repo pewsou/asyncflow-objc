@@ -18,7 +18,7 @@
 
 #import <Foundation/Foundation.h>
 #import "ASFKBase.h"
-#import "ASFKPipelineSession.h"
+
 @interface ASFKGlobalThreadpool : NSObject
 +(ASFKGlobalThreadpool *)sharedManager ;
 
@@ -28,16 +28,21 @@
 -(void) postDataAsOrderedSet:(NSOrderedSet*)set forSession:(ASFK_IDENTITY_TYPE)sessionId;
 -(void) postDataAsUnorderedSet:(NSSet*)data forSession:(ASFK_IDENTITY_TYPE)sessionId;
 -(void) postDataAsDictionary:(NSDictionary*)data forSession:(ASFK_IDENTITY_TYPE)sessionId;
--(BOOL) addSession:(ASFKPipelineSession*)aseq withId:(ASFK_IDENTITY_TYPE)identity;
+-(BOOL) addSession:(ASFKThreadpoolSession*)aseq withId:(ASFK_IDENTITY_TYPE)identity;
 
--(ASFKPipelineSession*) getThreadpoolSessionWithId:(ASFK_IDENTITY_TYPE)identity;
+-(ASFKThreadpoolSession*) getThreadpoolSessionWithId:(ASFK_IDENTITY_TYPE)identity;
 -(NSArray*) getThreadpoolSessionsList;
 -(void) cancelSession:(ASFK_IDENTITY_TYPE)sessionId;
 -(void) cancelAll;
 -(BOOL) isBusySession:(ASFK_IDENTITY_TYPE)sessionId;
 
+-(BOOL) isPausedSession:(ASFK_IDENTITY_TYPE)sessionId;
+
 -(void) flushSession:(ASFK_IDENTITY_TYPE)sessionId;
 -(void) flushAll;
-
+-(void) pauseSession:(ASFK_IDENTITY_TYPE)sessionId;
+-(void) pauseAll;
+-(void) resumeSession:(ASFK_IDENTITY_TYPE)sessionId;
+-(void) resumeAll;
 -(long) itemsCountForSession:(ASFK_IDENTITY_TYPE)sessionId;
 @end

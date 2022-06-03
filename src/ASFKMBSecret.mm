@@ -65,7 +65,6 @@
 @end
 
 @interface ASFKSecret ()
-
 @end
 @implementation ASFKSecret{
     std::atomic<BOOL> secretExpirationSet;
@@ -84,7 +83,6 @@
     ASFK_PrivSecretItem* psiSecurity;
     ASFK_PrivSecretItem* psiConfig;
     ASFK_PrivSecretItem* psiIssuer;
-    
 
 }
 
@@ -97,7 +95,8 @@
         secretMaxUsageSet=NO;
         itsUsageCount=INTMAX_MAX;
         
-        psiModerator=[ASFK_PrivSecretItem new];;
+        psiSecurity=[ASFK_PrivSecretItem new];
+        psiConfig=[ASFK_PrivSecretItem new];
         psiUnicaster=[ASFK_PrivSecretItem new];
         psiMulticaster=[ASFK_PrivSecretItem new];
         psiReader=[ASFK_PrivSecretItem new];
@@ -105,25 +104,13 @@
         psiCreator=[ASFK_PrivSecretItem new];
         psiDiscarder=[ASFK_PrivSecretItem new];
         psiHost=[ASFK_PrivSecretItem new];
+        psiModerator=[ASFK_PrivSecretItem new];;
         psiIssuer=[ASFK_PrivSecretItem new];
-        psiSecurity=[ASFK_PrivSecretItem new];
-        //psiRcManager=[ASFK_PrivSecretItem new];
-        psiConfig=[ASFK_PrivSecretItem new];
+        
     }
     return self;
 }
--(BOOL) setIssuerSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
-    if(cmpproc==nil){
-        return NO;
-    }
-    BOOL tval=NO;
-    if(psiIssuer->secretCmpSet.compare_exchange_strong(tval,YES))
-    {
-        psiIssuer->secretCmpProc=cmpproc;
-        return YES;
-    }
-    return NO;
-}
+
 -(BOOL) setUnicasterSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
     if(cmpproc==nil){
         return NO;
@@ -196,18 +183,6 @@
     }
     return NO;
 }
--(BOOL) setModeratorSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
-    if(cmpproc==nil){
-        return NO;
-    }
-    BOOL tval=NO;
-    if(psiModerator->secretCmpSet.compare_exchange_strong(tval,YES))
-    {
-        psiModerator->secretCmpProc=cmpproc;
-        return YES;
-    }
-    return NO;
-}
 -(BOOL) setHostSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
     if(cmpproc==nil){
         return NO;
@@ -240,6 +215,30 @@
     if(psiConfig->secretCmpSet.compare_exchange_strong(tval,YES))
     {
         psiConfig->secretCmpProc=cmpproc;
+        return YES;
+    }
+    return NO;
+}
+-(BOOL) setModeratorSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    if(cmpproc==nil){
+        return NO;
+    }
+    BOOL tval=NO;
+    if(psiModerator->secretCmpSet.compare_exchange_strong(tval,YES))
+    {
+        psiModerator->secretCmpProc=cmpproc;
+        return YES;
+    }
+    return NO;
+}
+-(BOOL) setIssuerSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    if(cmpproc==nil){
+        return NO;
+    }
+    BOOL tval=NO;
+    if(psiIssuer->secretCmpSet.compare_exchange_strong(tval,YES))
+    {
+        psiIssuer->secretCmpProc=cmpproc;
         return YES;
     }
     return NO;
@@ -348,7 +347,6 @@
 
     return [psiReader matchSecretHost:_secretReader secretGuest:secret->_secretReader usageCount:itsUsageCount];
 }
-
 -(BOOL) matchesPopperSecret:(ASFKSecret*)secret{
     if(!psiPopper->secretValid || secret==nil){
         return NO;
@@ -360,7 +358,6 @@
     }
     return [psiPopper matchSecretHost:_secretPopper secretGuest:secret->_secretPopper usageCount:itsUsageCount];
 }
-
 -(BOOL) matchesDiscarderSecret:(ASFKSecret*)secret{
     if(!psiDiscarder->secretValid || secret==nil){
         return NO;
@@ -372,7 +369,6 @@
     }
     return [psiDiscarder matchSecretHost:_secretDiscarder secretGuest:secret->_secretDiscarder usageCount:itsUsageCount];
 }
-
 -(BOOL) matchesCreatorSecret:(ASFKSecret*)secret{
     if(!psiCreator->secretValid || secret==nil){
         return NO;
@@ -394,6 +390,29 @@
         return NO;
     }
     return [psiHost matchSecretHost:_secretHost secretGuest:secret->_secretHost usageCount:itsUsageCount];
+}
+-(BOOL) matchesIssuerSecret:(ASFKSecret*)secret{
+    if(!psiIssuer->secretValid || secret==nil){
+        return NO;
+    }
+    
+    if([self passedExpirationDeadline:[NSDate date]] || itsUsageCount<1){
+        [self invalidateIssuerSecret];
+        return NO;
+    }
+    return [psiIssuer matchSecretHost:_secretIssuer secretGuest:secret->_secretIssuer usageCount:itsUsageCount];
+}
+-(BOOL) matchesModeratorSecret:(ASFKSecret*)secret{
+    if(!psiModerator->secretValid || secret==nil){
+        return NO;
+    }
+    if([self passedExpirationDeadline:[NSDate date]] || itsUsageCount<1){
+        [self invalidateModeratorSecret];
+        return NO;
+    }
+    
+    return [psiModerator matchSecretHost:_secretModerator secretGuest:secret->_secretModerator usageCount:itsUsageCount];
+    
 }
 #pragma mark - secret setting
 
@@ -429,7 +448,6 @@
     }
     return NO;
 }
-
 -(BOOL) setPopperSecretOnce:(id)secret{
     BOOL tval=NO;
     if(psiPopper->secretSet.compare_exchange_strong(tval,YES))
@@ -440,7 +458,6 @@
     }
     return NO;
 }
-
 -(BOOL) setDiscarderSecretOnce:(id)secret{
     BOOL tval=NO;
     if(psiDiscarder->secretSet.compare_exchange_strong(tval,YES))
@@ -484,7 +501,6 @@
     }
     return NO;
 }
-
 -(BOOL) setConfigSecretOnce:(id)secret{
     BOOL tval=NO;
     if(psiConfig->secretSet.compare_exchange_strong(tval,YES))
@@ -496,10 +512,30 @@
     }
     return NO;
 }
-#pragma mark - Invalidation
--(void) invalidateModeratorSecret{
-    psiModerator->secretValid=NO;
+-(BOOL) setModeratorSecretOnce:(id)secret{
+    BOOL tval=NO;
+    if(psiModerator->secretSet.compare_exchange_strong(tval,YES))
+    {
+        _secretModerator=secret;
+        DASFKLog(@"ASFKMBSecret: base class called");
+        return YES;
+        
+    }
+    return NO;
 }
+-(BOOL) setIssuerSecretOnce:(id)secret{
+    BOOL tval=NO;
+    if(psiIssuer->secretSet.compare_exchange_strong(tval,YES))
+    {
+        _secretIssuer=secret;
+        DASFKLog(@"ASFKMBSecret: class called");
+        return YES;
+        
+    }
+    return NO;
+}
+#pragma mark - Invalidation
+
 -(void) invalidateUnicasterSecret{
     psiUnicaster->secretValid=NO;
 }
@@ -521,20 +557,21 @@
 -(void) invalidateConfigSecret{
     psiConfig->secretValid=NO;
 }
-
--(void) invalidateIssuerSecret{
-    psiIssuer->secretValid=NO;
-}
 -(void) invalidateSecuritySecret{
     psiSecurity->secretValid=NO;
 }
 -(void) invalidateHostSecret{
     psiHost->secretValid=NO;
 }
-#pragma mark - Validity
--(BOOL) validSecretModerator{
-    return psiModerator->secretValid;
+-(void) invalidateIssuerSecret{
+    psiIssuer->secretValid=NO;
 }
+-(void) invalidateModeratorSecret{
+    psiModerator->secretValid=NO;
+}
+
+#pragma mark - Validity
+
 -(BOOL) validSecretCreator{
     return psiCreator->secretValid;
 }
@@ -559,32 +596,34 @@
 -(BOOL) validSecretHost{
     return psiHost->secretValid;
 }
--(BOOL) validSecretIssuer{
-    return psiIssuer->secretValid;
-}
-
 -(BOOL) validSecretConfig{
     return psiConfig->secretValid;
 }
+-(BOOL) validSecretIssuer{
+    return psiIssuer->secretValid;
+}
+-(BOOL) validSecretModerator{
+    return psiModerator->secretValid;
+}
+
 -(void) invalidateAll{
-    [self invalidateModeratorSecret];
     [self invalidateUnicasterSecret];
     [self invalidateMulticasterSecret];
     [self invalidateReaderSecret];
     [self invalidatePopperSecret];
     [self invalidateDiscarderSecret];
     [self invalidateCreatorSecret];
-    [self invalidateIssuerSecret];
     [self invalidateHostSecret];
     [self invalidateConfigSecret];
     [self invalidateSecuritySecret];
+    [self invalidateModeratorSecret];
+    [self invalidateIssuerSecret];
 }
 -(BOOL) isValidOnDate:(NSDate*)aDate{
     return (![self passedExpirationDeadline:aDate]);
 }
 -(BOOL) areValidAll{
     return (psiCreator->secretValid&&
-            psiModerator->secretValid&&
             psiUnicaster->secretValid&&
             psiMulticaster->secretValid&&
             psiReader->secretValid&&
@@ -593,13 +632,13 @@
             psiHost->secretValid&&
             psiSecurity->secretValid&&
             psiConfig->secretValid&&
+            psiModerator->secretValid&&
             psiIssuer->secretValid
             );
 }
 -(BOOL) isValidAny{
     return (
             psiCreator->secretValid||
-            psiModerator->secretValid||
             psiUnicaster->secretValid||
             psiMulticaster->secretValid||
             psiReader->secretValid||
@@ -607,8 +646,9 @@
             psiDiscarder->secretValid||
             psiSecurity->secretValid ||
             psiHost->secretValid ||
-            psiIssuer->secretValid||
-            psiConfig->secretValid
+            psiConfig->secretValid||
+            psiModerator->secretValid||
+            psiIssuer->secretValid
             );
 }
 @end
