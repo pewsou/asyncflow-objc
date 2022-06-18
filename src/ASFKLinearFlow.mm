@@ -45,11 +45,11 @@
     itsIsReady=YES;
     _backprocs=[[NSMutableArray alloc]init];
     lfProcs=_backprocs;
-    sumproc=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
+    sumProc=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
         ASFKLog(@"ASFKLinearFlow: Stub summary");
         return data;
     };
-    cancelproc=nil;
+    cancellationHandler=nil;
     progressProc=nil;
     semHighLevelCall=dispatch_semaphore_create(1);
 }
@@ -70,13 +70,13 @@
 }
 -(ASFKExecutableRoutineSummary) getSummaryRoutine{
     [lkNonLocal lock];
-    ASFKExecutableRoutineSummary c=sumproc;
+    ASFKExecutableRoutineSummary c=sumProc;
     [lkNonLocal unlock];
     return c;
 }
 -(ASFKCancellationRoutine) getCancellationHandler{
     [lkNonLocal lock];
-    ASFKCancellationRoutine c=cancelproc;
+    ASFKCancellationRoutine c=cancellationHandler;
     [lkNonLocal unlock];
     return c;
 }
@@ -133,7 +133,7 @@
     }
     return YES;
 }
--(BOOL) setRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)someprocs{
+-(BOOL) replaceRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)someprocs{
        BOOL replaced=NO;
        dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
        itsIsReady=NO;
@@ -154,13 +154,29 @@
 -(BOOL) isReady{
     return itsIsReady;
 }
+-(BOOL) setOnPauseNotification:(ASFKOnPauseNotification)notification{
+    if(notification){
+        dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
+        itsIsReady=NO;
+        [lkNonLocal lock];
+        onPauseProc=notification;
+        [lkNonLocal unlock];
+        itsIsReady=YES;
+        dispatch_semaphore_signal(semHighLevelCall);
+    }
+    else{
+        EASFKLog(@"ASFKLinearFlow: Invalid Routine provided");
+        return NO;
+    }
+    return YES;
+}
 -(BOOL) setSummary:(ASFKExecutableRoutineSummary)summary{
     if(summary){
         dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
         itsIsReady=NO;
         [lkNonLocal lock];
-        sumproc=nil;
-        sumproc=summary;
+        sumProc=nil;
+        sumProc=summary;
         [lkNonLocal unlock];
         itsIsReady=YES;
         dispatch_semaphore_signal(semHighLevelCall);
@@ -176,8 +192,8 @@
         dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
         itsIsReady=NO;
         [lkNonLocal lock];
-        cancelproc=nil;
-        cancelproc=ch;
+        cancellationHandler=nil;
+        cancellationHandler=ch;
         [lkNonLocal unlock];
         itsIsReady=YES;
         dispatch_semaphore_signal(semHighLevelCall);
@@ -325,7 +341,7 @@
 -(ASFKParamSet*) _decodeExParams:(ASFKExecutionParams*)ex forSession:(id)sessionId{
     ASFKParamSet* expar=[ASFKParamSet new];
     if(ex){
-        expar.summary = ex->SummaryRoutine?ex->SummaryRoutine:sumproc;
+        expar.summary = ex->summaryRoutine?ex->summaryRoutine:sumProc;
         expar.procs = [NSMutableArray array];
         NSArray* prarr=ex->procs;
         if(prarr==nil || [prarr count]==0 || [prarr isKindOfClass:[NSNull class]]){
@@ -334,23 +350,13 @@
         for (ASFKExecutableRoutine p in prarr){
             [expar.procs addObject:[p copy]];
         };
-        expar.cancProc = ex->cancellationProc?ex->cancellationProc:cancelproc;
+        expar.onPause = ex->onPauseProc?ex->onPauseProc:onPauseProc;
+        expar.cancProc = ex->cancellationProc?ex->cancellationProc:cancellationHandler;
         expar.excond=ex->expCondition;
         expar.progress = ex->progressProc?ex->progressProc:progressProc;
         expar.sessionId=sessionId;
     }
-//    else{
-//        expar.summary = sumproc;
-//        expar.procs = [_backprocs copy];
-//        expar.cancProc = cancelproc;
-//        
-//    }
-//    if(sessionId){
-//        expar.sessionId=sessionId;
-//    }
-//    else{
-//        expar.sessionId=[ASFKBase generateIdentity];
-//    }
+
     return expar;
 }
 @end

@@ -12,7 +12,6 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Created by Boris Vigman on 15/02/2019.
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -42,25 +41,25 @@
 -(BOOL) testCriteriaMatch:(id)object{
     return YES;
 }
--(BOOL) filterCandidatesInArray:(NSArray*)objects saveToArray:(NSMutableArray*)array{
+-(BOOL) filterCandidatesInArray:(NSArray*)objects passing:(BOOL)writeOut saveToArray:(NSMutableArray*)array{
     return YES;
 }
--(BOOL) filterCandidatesInArray:(NSArray*)objects saveToIndexSet:(NSMutableIndexSet*)iset{
+-(BOOL) filterCandidatesInArray:(NSArray*)objects passing:(BOOL)writeOut saveToIndexSet:(NSMutableIndexSet*)iset{
     return YES;
 }
--(BOOL) filterCandidatesInArray:(NSArray*)objects saveToRange:(NSRange&)range{
+-(BOOL) filterCandidatesInArray:(NSArray*)objects passing:(BOOL)writeOut saveToRange:(NSRange&)range{
     return YES;
 }
--(BOOL) filterCandidatesInSet:(NSSet*)objects saveToArray:(NSMutableArray*)array{
+-(BOOL) filterCandidatesInSet:(NSSet*)objects passing:(BOOL)writeOut saveToArray:(NSMutableArray*)array{
     return YES;
 }
--(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects saveToIndexSet:(NSMutableIndexSet*)iset{
+-(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects passing:(BOOL)writeOut saveToIndexSet:(NSMutableIndexSet*)iset{
     return YES;
 }
--(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects saveToRange:(NSRange&)range{
+-(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects passing:(BOOL)writeOut saveToRange:(NSRange&)range{
     return YES;
 }
--(BOOL) filterCandidatesInDictionary:(NSDictionary*)objects saveToKeys:(NSMutableArray*)keys values:(NSMutableArray*)values{
+-(BOOL) filterCandidatesInDictionary:(NSDictionary*)objects passing:(BOOL)writeOut saveToKeys:(NSMutableArray*)keys values:(NSMutableArray*)values{
     return YES;
 }
 @end

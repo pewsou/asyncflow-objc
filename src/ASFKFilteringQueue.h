@@ -19,10 +19,49 @@
 
 @interface ASFKFilteringQueue : ASFKQueue
 typedef NSIndexSet* (^clbkASFKFQFilter)(NSArray* collection, NSRange range);
--(void) setMaxQSize:(NSUInteger)size;
--(void) setMinQSize:(NSUInteger)size;
+/*!
+ @brief Sets maximum queue size.
+ @discussion when the queue size reached this value any further enqueing operation will not increase it.
+ @param size required maximum size.
+ @return YES if the update left the limits in ascending order, NO otherwise.
+ */
+-(BOOL) setMaxQSize:(NSUInteger)size;
+/*!
+ @brief Sets minimum queue size.
+ @discussion when the queue size reached this value any further enqueing operation will not decrease it.
+ @param size required minimum size.
+ @return YES if the update left the limits in ascending order, NO otherwise.
+ */
+-(BOOL) setMinQSize:(NSUInteger)size;
+/*!
+ @brief Sets dropping methods for this queue.
+ @discussion when the queue's maximum size reached then on 'push' operation decision needs to be taken regarding fresh candidate. In order to keep the queue size unchanged some item(s) need to be discarded; alternatively new candidate may be rejected. This method sets specific dropping mode.
+ */
 -(void) setDroppingPolicy:(eASFKQDroppingPolicy)policy;
+/*!
+ @brief Sets dropping algorithm for this queue.
+ @discussion when the queue's maximum size reached then on 'push' operation decision needs to be taken regarding fresh candidate. In order to keep the queue size unchanged some item(s) need to be discarded; alternatively new candidate may be rejected. this method sets specific dropping algorittm.
+ @param dropAlg the custom dropping algorithm; may bi nil.
+ */
 -(void) setDroppingAlgorithmL1:(ASFKFilter*)dropAlg;
+/*!
+ @brief Pulls item from queue, while simulating the queue size.
+ @discussion Sometimes it is necessary to pull item from queue while pretending that its size is differend from actual. 
+ @param count number to be temporarily added to the queue size while deciding if item can be pulled.
+ */
+-(id)   pullWithCount:(NSInteger) count;
+/*!
+ @brief Filters queue with provided filtering object.
+ @discussion Leaves in queue only items that do not match filtering criteria.
+ @param filter the filtering object; may be nil.
+ */
 -(void) filterWith:(ASFKFilter*)filter;
--(BOOL) removeObjWithId:(id)obj andBlock:(BOOL (^)(id item,id sample, BOOL* stop)) blk;
+/*!
+ @brief Removes from queue given object.
+ @discussion Removes from queue all objects equal to given object with respect to provided property; equality is defined by the block.
+ @param obj object to remove; may not be nil.
+ @param blk block that tests equality; must return YES to remove; may not be nil.
+ @return YES for succesful removal; NO otherwise.
+ */
+-(BOOL) removeObjWithProperty:(id)obj andBlock:(BOOL (^)(id item,id sample, BOOL* stop)) blk;
 @end

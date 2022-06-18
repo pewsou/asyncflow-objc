@@ -92,8 +92,9 @@
 @interface ASFKLinearFlow : ASFKBase<ASFKRoutable,ASFKLinkable,ASFKSynchronous,ASFKAsynchronous>{
     @protected NSMutableArray<ASFKExecutableRoutine> * _backprocs;
     @protected NSArray<ASFKExecutableRoutine> *lfProcs;
-    @protected ASFKCancellationRoutine cancelproc;
-    @protected ASFKExecutableRoutineSummary sumproc;
+    @protected ASFKExecutableRoutineSummary sumProc;
+    @protected ASFKOnPauseNotification onPauseProc;
+    @protected ASFKCancellationRoutine cancellationHandler;
     @protected dispatch_semaphore_t semHighLevelCall;
 }
 -(NSArray<ASFKExecutableRoutine> *) getRoutines;
@@ -105,11 +106,13 @@
  @brief Equals NO if sender is updating stored Routines; YES otherwise.
  */
 -(BOOL) isReady;
+
 /**
  @brief Appends block which invokes Objective-C code; the block is added to internal collection. This operation may succeed only if no Routine is active at time of addition.
  @param proc block that processes a data.
  */
 -(BOOL) addRoutine:(ASFKExecutableRoutine)proc;
+
 /**
  @brief Stores array of Routines for later use; content of array is copied and added to internal collection.
  This operation may succeed only if no Routine is active at time of addition.
@@ -117,18 +120,20 @@
  @return YES if operation succeeded; NO otherwise;
  */
 -(BOOL) addRoutines:(NSArray<ASFKExecutableRoutine>*)procs;
+
 /**
  @brief Replaces existing collection of Routines with new one. This operation may succeed only if no Routine is active at time of addition.
  @param procs new array of Routines. If aray is empty or nil, nothing happens.
  @return YES if operation succeeded; NO otherwise.
  */
--(BOOL) setRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)procs;
+-(BOOL) replaceRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)procs;
 
 /**
  @brief Stores summary block which invokes Objective-C code
  @param summary block that is called after all Routines.
  */
 -(BOOL) setSummary:(ASFKExecutableRoutineSummary)summary;
+-(BOOL) setOnPauseNotification:(ASFKOnPauseNotification)notification;
 /**
  @brief Stores block which invokes Objective-C code as a summary for cancelled session.
  @param ch block that is called in case of cancellation.

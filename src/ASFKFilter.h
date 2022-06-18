@@ -12,19 +12,73 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Created by Boris Vigman on 15/02/2019.
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
 #import "ASFKBase.h"
 
 @interface ASFKFilter : ASFKLinearFlow
+/*!
+ @brief Tests given object with some custom criteria.
+ @param object object to test.
+ @return YES if test passes; NO otherwise.
+ */
 -(BOOL) testCriteriaMatch:(id)object;
--(BOOL) filterCandidatesInArray:(NSArray*)objects saveToArray:(NSMutableArray*)array;
--(BOOL) filterCandidatesInArray:(NSArray*)objects saveToIndexSet:(NSMutableIndexSet*)iset;
--(BOOL) filterCandidatesInArray:(NSArray*)objects saveToRange:(NSRange&)range;
--(BOOL) filterCandidatesInSet:(NSSet*)objects saveToArray:(NSMutableArray*)array;
--(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects saveToIndexSet:(NSMutableIndexSet*)iset;
--(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects saveToRange:(NSRange&)range;
--(BOOL) filterCandidatesInDictionary:(NSDictionary*)objects saveToKeys:(NSMutableArray*)keys values:(NSMutableArray*)values;
+/*!
+ @brief Tests array of objects.
+ @param objects objects to test.
+ @param writeOut indication of whether to save passing objects or non-passing. YES for passing, NO otherwise.
+ @param array array of filtered objects.
+ @return YES if at least one test passes; NO otherwise.
+ */
+-(BOOL) filterCandidatesInArray:(NSArray*)objects passing:(BOOL)writeOut saveToArray:(NSMutableArray*)array;
+/*!
+ @brief Tests array of objects.
+ @param objects objects to test.
+ @param writeOut indication of whether to save passing objects or non-passing. YES for passing, NO otherwise.
+ @param iset index set of filtered objects.
+ @return YES if at least one test passes; NO otherwise.
+ */
+-(BOOL) filterCandidatesInArray:(NSArray*)objects passing:(BOOL)writeOut saveToIndexSet:(NSMutableIndexSet*)iset;
+/*!
+ @brief Tests array of objects.
+ @param objects objects to test.
+ @param writeOut indication of whether to save passing objects or non-passing. YES for passing, NO otherwise.
+ @param range range of indexes of filtered objects.
+ @return YES if at least one test passes; NO otherwise.
+ */
+-(BOOL) filterCandidatesInArray:(NSArray*)objects passing:(BOOL)writeOut saveToRange:(NSRange&)range;
+/*!
+ @brief Tests unordered set of objects.
+ @param objects objects to test.
+ @param writeOut indication of whether to save passing objects or non-passing. YES for passing, NO otherwise.
+ @param array array of filtered objects.
+ @return YES if at least one test passes; NO otherwise.
+ */
+-(BOOL) filterCandidatesInSet:(NSSet*)objects passing:(BOOL)writeOut saveToArray:(NSMutableArray*)array;
+/*!
+ @brief Tests unordered set of objects.
+ @param objects ordered set of objects to test.
+ @param writeOut indication of whether to save passing objects or non-passing. YES for passing, NO otherwise.
+ @param iset index set of filtered objects.
+ @return YES if at least one test passes; NO otherwise.
+ */
+-(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects passing:(BOOL)writeOut saveToIndexSet:(NSMutableIndexSet*)iset;
+/*!
+ @brief Tests unordered set of objects.
+ @param objects ordered set of objects to test.
+ @param writeOut indication of whether to save passing objects or non-passing. YES for passing, NO otherwise.
+ @param range range of indexes of filtered objects.
+ @return YES if at least one test passes; NO otherwise.
+ */
+-(BOOL) filterCandidatesInOrderedSet:(NSOrderedSet*)objects passing:(BOOL)writeOut saveToRange:(NSRange&)range;
+/*!
+ @brief Tests dictionary of objects.
+ @param objects ordered set of objects to test.
+ @param writeOut indication of whether to save passing objects or non-passing. YES for passing, NO otherwise.
+ @param keys array of keys of filtered objects. If nil, then not used.
+ @param values array of values of filtered objects. If nil, then not used.
+ @return YES if at least one test passes; NO otherwise.
+ */
+-(BOOL) filterCandidatesInDictionary:(NSDictionary*)objects passing:(BOOL)writeOut saveToKeys:(NSMutableArray*)keys values:(NSMutableArray*)values;
 @end

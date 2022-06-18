@@ -12,7 +12,6 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 
 #ifndef ASFKPrjConfig_h
@@ -23,7 +22,12 @@
 
 #define ASFK_PRIVSYM_TP_LOAD_FACTOR 1
 #define ASFK_PRIVSYM_QOS_CLASS QOS_CLASS_BACKGROUND
-#define ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD 100000
+#define ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD 1000000
+#define ASFK_PRIVSYM_MEM_PRESSURE_MLBX_THRESHOLD 1000000
+#define ASFK_PRIVSYM_PER_MLBX_MAX_MSG_LIMIT 1000000
+#define ASFK_PRIVSYM_MAX_MLBX_LIMIT 100000
+#define ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE 10000
+#define ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE 10000
 #define ASFK_CALC_ELAPSED_TIME(starttime, endtime) (endtime-starttime)/double(1e9)
 
 #define ASFK_RC_DESCR_DONE @"OK"

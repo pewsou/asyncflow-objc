@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+//
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -78,12 +78,20 @@
     ASFKLog(@"creating new session for id %@",sessionId);
     ASFKPipelineSession* newseq=[[ASFKPipelineSession alloc]initWithSessionId:sessionId andSubsessionId:nil];
     newseq.sessionId=[[newseq getControlBlock]sessionId];
-    
+    newseq->cancellationProc = (id)^(id sessionId){
+        if(sessionId){
+            [lkNonLocal lock];
+            [ctrlblocks removeObjectForKey:sessionId];
+            [lkNonLocal unlock];
+        }
+    };
     return newseq;
 }
 -(ASFKPipelineSession*) _prepareSession:(ASFKPipelineSession*)seq withParams:(ASFKParamSet*) params {
     [seq replaceRoutinesWithArray:params.procs];
     [seq setSummary:params.summary];
+    [seq setCancellationHandler:params.cancProc];
+    seq->onPauseNotification=params.onPause;
     [self registerSession:[seq getControlBlock]];
     return seq;
 }
@@ -103,18 +111,16 @@
 /*!
  @return number of running sessions
  */
-+(long long) runningSessionsCount{
-    return [[ASFKGlobalThreadpool sharedManager]  runningSessionsCount];
+-(long long) getRunningSessionsCount{
+    return [globalTPool  runningSessionsCount];
 }
 /*!
  @return number of paused sessions
  */
-+(long long) pausedSessionsCount{
-    return [[ASFKGlobalThreadpool sharedManager]  pausedSessionsCount];
+-(long long) getPausedSessionsCount{
+    return [globalTPool pausedSessionsCount];
 }
-+(void)flushAllGlobally{
-    [[ASFKGlobalThreadpool sharedManager]  flushAll];
-}
+#pragma mark - Flush/Resume/Cancel
 -(void)flushAll{
     [lkNonLocal lock];
     for (id s in ctrlblocks) {
@@ -128,7 +134,7 @@
 }
 
 /*!
- @brief flushes all queued items for all sessions created by this instance.
+ @brief pauses all sessions created by this instance.
  */
 -(void)pauseAll{
     [lkNonLocal lock];
@@ -138,16 +144,14 @@
     [lkNonLocal unlock];
 }
 /*!
- @brief flushes all queued items for given session ID.
+ @brief pauses session for given session ID.
  */
 -(void)pauseSession:(ASFK_IDENTITY_TYPE)sessionId{
     [globalTPool pauseSession:sessionId];
 }
-+(void)pauseAllGloball{
-    [[ASFKGlobalThreadpool sharedManager]  pauseAll];
-}
+
 /*!
- @brief flushes all queued items for all sessions created by this instance.
+ @brief resumes all sessions created by this instance.
  */
 -(void)resumeAll{
     [lkNonLocal lock];
@@ -159,26 +163,6 @@
 -(void)resumeSession:(ASFK_IDENTITY_TYPE)sessionId{
     [globalTPool resumeSession:sessionId];
 }
-+(void)resumeAllGlobally{
-    [[ASFKGlobalThreadpool sharedManager]  resumeAll];
-}
-
--(BOOL) isPausedSession:(ASFK_IDENTITY_TYPE)sessionId{
-    return [globalTPool  isPausedSession:sessionId];
-}
-
--(BOOL)isBusySession:(id)sessionId{
-    return [globalTPool  isBusySession:sessionId];
-}
-
--(BOOL)isReady{
-    return YES;
-}
-
--(long) itemsCountForSession:(id)sessionId{
-    return [globalTPool  itemsCountForSession:sessionId];
-}
-
 -(void)cancelAll{
     [lkNonLocal lock];
     for (id s in ctrlblocks) {
@@ -187,14 +171,30 @@
     [lkNonLocal unlock];
     [self forgetAllSessions];
 }
-+(void)cancelAllGlobally{
-    [[ASFKGlobalThreadpool sharedManager]  cancelAll];
-}
+
 -(void)cancelSession:(NSString*)sessionId{
     [globalTPool cancelSession:sessionId];
     if(sessionId){
         [self forgetSession:sessionId];
     }
+}
+#pragma mark - Queries
+-(BOOL) isPausedSession:(ASFK_IDENTITY_TYPE)sessionId{
+    return [globalTPool  isPausedSession:sessionId];
+}
+
+-(BOOL)isBusySession:(id)sessionId{
+    return [globalTPool  isBusySession:sessionId];
+}
+//-(BOOL) isBusy{
+//    return NO;
+//}
+-(BOOL)isReady{
+    return YES;
+}
+
+-(long long) itemsCountForSession:(id)sessionId{
+    return [globalTPool itemsCountForSession:sessionId];
 }
 
 
@@ -204,14 +204,14 @@
     ASFKParamSet* params=[self _decodeExParams:exparams forSession:sid];
     if(!params.summary)
     {
-        params.summary = sumproc;
+        params.summary = sumProc;
     }
     if(!params.procs || [params.procs count]==0)
     {
         params.procs = [_backprocs copy];
     }
     if(!params.cancProc){
-        params.cancProc = cancelproc;
+        params.cancProc = cancellationHandler;
     }
 
     //test params
@@ -246,7 +246,7 @@
     }
     
     //pass session to execution
-    BOOL res=[globalTPool  addSession:s withId:s.sessionId];
+    BOOL res=[globalTPool addSession:s withId:s.sessionId];
     dispatch_semaphore_signal(semHighLevelCall);
     
     uint64 main_t2=[ASFKBase getTimestamp];
@@ -271,9 +271,8 @@
     [lkNonLocal unlock];
     return sessions;
 }
+
 #pragma mark - Non-blocking methods
-
-
 -(NSDictionary*) _castArray:(ASFKParamSet*)params{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);

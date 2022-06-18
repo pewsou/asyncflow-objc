@@ -12,8 +12,6 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//
-//  Created by Boris Vigman on 05/04/2019.
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -21,7 +19,7 @@
 #import "ASFKMailbox.h"
 #import "ASFKAuthorizationMgr.h"
 
-@interface Private_ASFKBlockingRW:NSObject{
+@interface Private_ASFKBlocker:NSObject{
 @public NSCondition* rlocker;
 @public BOOL blocked;
 }
@@ -31,7 +29,7 @@
 @property (nonatomic) ASFKMBMsgProperties* props;
 
 @end
-@implementation Private_ASFKBlockingRW
+@implementation Private_ASFKBlocker
 @end
 
 @interface Private_ASFKMBMsg:NSObject{
@@ -95,6 +93,7 @@
 -(BOOL) setProperties:(ASFKMBContainerProperties*)props;
 -(BOOL) setMemberingLimitsLow:(NSUInteger)low high:(NSUInteger)high;
 -(BOOL) isValid;
+-(BOOL) isBlacklisted;
 -(BOOL) isPrivateSecretValid:(ASFKPrivateSecret*)secret matcher:(ASFKSecretComparisonProc)match;
 -(BOOL) setPrivateSecret:(ASFKPrivateSecret*)oldsec newsec:(ASFKPrivateSecret*)newsec user:(id)uid authMgr:(ASFKAuthorizationMgr*)auth;
 -(BOOL) isPrivate;
@@ -130,7 +129,7 @@
 -(void) _testAndAccept:(NSDate*)tmpoint;
 @end
 @implementation ASFKSomeContainer{
-    Private_ASFKBlockingRW* rwBlocker;
+    Private_ASFKBlocker* readBlocker;
 }
 +(NSDate*) maxDate1:(NSDate*)d1 date2:(NSDate*)d2{
     if(d1 && d2){
@@ -199,10 +198,13 @@
         memLimitLow=0;
         memLimitHigh=0;
 
-        rwBlocker=[Private_ASFKBlockingRW new];
-        rwBlocker->rlocker=[NSCondition new];
+        readBlocker=[Private_ASFKBlocker new];
+        readBlocker->rlocker=[NSCondition new];
     }
     return self;
+}
+-(BOOL) isBlacklisted{
+    return blacklisted;
 }
 -(BOOL) isValid{
     return blacklisted?NO:YES;
@@ -415,6 +417,7 @@
     [lock1 unlock];
     return c;
 }
+
 -(NSUInteger) msgCount{
     if(blacklisted){
         return 0;
@@ -465,9 +468,13 @@
     if(blacklisted){
         return nil;
     }
+    if([self msgCount]>ASFK_PRIVSYM_PER_MLBX_MAX_MSG_LIMIT){
+        WASFKLog(@"Too many messages in container %@; delivery failed!",self.itsOwnerId);
+        return nil;
+    }
     
     BOOL grant=NO;
-    
+    [lock1 lock];
     if(itscprops.blockingReadwriteAllowed){
         blk &= itscprops.blockingReadwriteAllowed;
     }
@@ -475,7 +482,6 @@
         blk=NO;
     }
     
-    [lock1 lock];
     if(properties==nil || [properties isKindOfClass:[NSNull null]]){
         grant=[self _canUserPost:nil];
     }
@@ -508,11 +514,9 @@
                 privmsg->wlocker=[NSCondition new];
                 BOOL success = [entranceQ push:privmsg];
                 if(success){
-
-                        [rwBlocker->rlocker lock];
-                        [rwBlocker->rlocker signal];
-                        [rwBlocker->rlocker unlock];
-
+                    [readBlocker->rlocker lock];
+                    [readBlocker->rlocker signal];
+                    [readBlocker->rlocker unlock];
                     [privmsg->wlocker lock];
                     [privmsg->wlocker wait];
                     [privmsg->wlocker unlock];
@@ -528,9 +532,9 @@
                     uuid=nil;
                 }
                 else{
-                    [rwBlocker->rlocker lock];
-                    [rwBlocker->rlocker signal];
-                    [rwBlocker->rlocker unlock];
+                    [readBlocker->rlocker lock];
+                    [readBlocker->rlocker signal];
+                    [readBlocker->rlocker unlock];
                 }
             }
             
@@ -544,12 +548,18 @@
     if(blacklisted){
         return @[];
     }
+    
     NSDate* tmpoint=[NSDate date];
     [self _testAndRemove:tmpoint];
     [self _testAndAccept:tmpoint];
     NSMutableArray* ma=[NSMutableArray array];
     NSMutableArray* readMsgs=[NSMutableArray array];
+    NSMutableIndexSet* iset=[NSMutableIndexSet new];
     [lock1 lock];
+    if(NO==itscprops.blockingReadwriteAllowed){
+        [lock1 unlock];
+        return @[];
+    }
     BOOL hasuser=[_users containsObject:uid] || [_itsOwnerId isEqualTo:uid];
     if(!hasuser){
         [lock1 unlock];
@@ -563,7 +573,7 @@
     [lock1 unlock];
 
     if(msc < 1 || amount > msc){
-        [rwBlocker->rlocker lock];
+        [readBlocker->rlocker lock];
         
         while(1){
             [self _testAndRemove:tmpoint];
@@ -572,14 +582,14 @@
             msc=[messages count];
             [lock1 unlock];
             if(msc < 1 ){
-                [rwBlocker->rlocker wait];
+                [readBlocker->rlocker wait];
             }
             else{
                 break;
             }
         }
         
-        [rwBlocker->rlocker unlock];
+        [readBlocker->rlocker unlock];
     }
     
     
@@ -612,19 +622,26 @@
     {
         Private_ASFKMBMsg* privmsg=[messages objectAtIndex:ui];
         if(privmsg->blocked == YES){
-            [ma addObject:privmsg.msg];
-            privmsg.props->maxAccessLimit.fetch_sub(1);
-            [readMsgs addObject:privmsg.msgId];
-            [privmsg->wlocker lock];
-            [privmsg->wlocker signal];
-            [privmsg->wlocker unlock];
+            if((privmsg.props.msgDeletionTimer && [privmsg.props passedDeletionDate:tmpoint]) || privmsg.props->maxAccessLimit==0){
+                [iset addIndex:ui];
+            }
+            else{
+                [ma addObject:privmsg.msg];
+                privmsg.props->maxAccessLimit.fetch_sub(1);
+                [readMsgs addObject:privmsg.msgId];
+                [privmsg->wlocker lock];
+                [privmsg->wlocker broadcast];
+                [privmsg->wlocker unlock];
+            }
         }
         else
         {
-            if(
+            if((privmsg.props.msgDeletionTimer && [privmsg.props passedDeletionDate:tmpoint]) || privmsg.props->maxAccessLimit==0){
+                [iset addIndex:ui];
+            }
+            else if(
                (privmsg.props.msgReadabilityTimer.itsDeadline==nil
                 || [privmsg.props passedReadingDate:tmpoint])
-               //&& privmsg.props->maxAccessLimit>0
                )
             {
                 if(privmsg.props->maxAccessLimit>0)
@@ -637,7 +654,7 @@
         }
         
     }
-
+    [messages removeObjectsAtIndexes:iset];
     [lock1 lock];
     NSUInteger msgCount=[messages count];
     ASFKMbNotifyOnContainerReadRoutine crr=itscprops.onReadProc;
@@ -656,6 +673,7 @@
     [self _testAndAccept:tmpoint];
     NSMutableArray* ma=[NSMutableArray array];
     NSMutableArray* readMsgs=[NSMutableArray array];
+    NSMutableIndexSet* iset=[NSMutableIndexSet new];
     [lock1 lock];
     BOOL hasuser=[_users containsObject:uid] || [_itsOwnerId isEqualTo:uid];
     if(!hasuser){
@@ -702,14 +720,28 @@
     {
         Private_ASFKMBMsg* privmsg=[messages objectAtIndex:ui];
 
-        if(privmsg.props->maxAccessLimit>0){
-            [ma addObject:privmsg.msg];
-            privmsg.props->maxAccessLimit.fetch_sub(1);
-            [readMsgs addObject:privmsg.msgId];
+        if([privmsg.props passedDeletionDate:tmpoint]){
+            [iset addIndex:ui];
+            if(privmsg->blocked==YES && privmsg->wlocker != nil){
+                [privmsg->wlocker lock];
+                [privmsg->wlocker broadcast];
+                [privmsg->wlocker unlock];
+            }
         }
-    
+        else{
+            if((privmsg.props.msgReadabilityTimer.itsDeadline==nil
+               || [privmsg.props passedReadingDate:tmpoint])
+               ){
+                if(privmsg.props->maxAccessLimit>0){
+                    [ma addObject:privmsg.msg];
+                    privmsg.props->maxAccessLimit.fetch_sub(1);
+                    [readMsgs addObject:privmsg.msgId];
+                }
+            }
+        }
     }
 
+    [messages removeObjectsAtIndexes:iset];
     NSUInteger msgCount=[messages count];
     ASFKMbNotifyOnContainerReadRoutine crr=itscprops.onReadProc;
     ASFKMbNRunOnContainerReadRoutine rcr=itscprops.runOnReadProc;
@@ -770,17 +802,12 @@
     }
     for (NSInteger ui=lowbound; ui<hibound; ++ui) {
         Private_ASFKMBMsg* privmsg=[messages objectAtIndex:ui];
-        if(
-           privmsg.props.msgReadabilityTimer.itsDeadline==nil
-           || [privmsg.props passedReadingDate:tmpoint]
-           ){
             [poppedMsgs addObject:privmsg.msgId];
             if(privmsg->blocked==YES && privmsg->wlocker != nil){
                 [privmsg->wlocker lock];
                 [privmsg->wlocker broadcast];
                 [privmsg->wlocker unlock];
             }
-        }
     }
 
     NSRange rn=NSMakeRange(lowbound, hibound-lowbound);
@@ -836,15 +863,16 @@
         }
     }];
     [messages removeAllObjects];
-    if(rwBlocker->rlocker){
-        [rwBlocker->rlocker lock];
-        [rwBlocker->rlocker broadcast];
-        [rwBlocker->rlocker unlock];
+    if(readBlocker->rlocker){
+        [readBlocker->rlocker lock];
+        [readBlocker->rlocker broadcast];
+        [readBlocker->rlocker unlock];
         
     }
+    ASFKMbNotifyOnContainerDiscardRoutine dp=itscprops.onDiscardProc;
     [lock1 unlock];
-    if(itscprops.onDiscardProc){
-        itscprops.onDiscardProc(self.itsOwnerId, tm);
+    if(dp){
+        dp(self.itsOwnerId, tm);
     }
 }
 -(void) discardAllMessages{
@@ -856,8 +884,9 @@
     }
     [lock1 lock];
     [backusers removeAllObjects];
-    [messages removeAllObjects];
-    [entranceQ reset];
+    [uprops removeAllObjects];
+//    [messages removeAllObjects];
+//    [entranceQ reset];
     [lock1 unlock];
 }
 -(void) discardUser:(id)uid{
@@ -877,7 +906,128 @@
         itscprops.onLeaveProc(self.itsOwnerId, uid);
     }
 }
+#pragma mark - moderation
+-(BOOL) mute:(BOOL)yesno user:(id)uid secret:(ASFKPrivateSecret *)secret group:(BOOL)grp{
+    if(blacklisted){
+        return NO;
+    }
+    if(grp){
+        BOOL res=NO;
+        [lock1 lock];
+        BOOL hasuser=[_users containsObject:uid];
+        if(!hasuser){
+            [lock1 unlock];
+            return NO;
+        }
+        ASFKMBGroupMemberProperties* up=[uprops objectForKey:uid];
+        if(up){
+            up.isMuted=yesno;
+            res=YES;
+        }
+        [lock1 unlock];
+        return res;
+    }
+    else{
+        BOOL res=NO;
+        [lock1 lock];
 
+        ASFKMBGroupMemberProperties* up=[uprops objectForKey:uid];
+        if(up){
+            up.isMuted=yesno;
+            res=YES;
+        }
+        else{
+            if(yesno){
+                ASFKMBGroupMemberProperties* u=[ASFKMBGroupMemberProperties new];
+                u.isMuted=YES;
+                [uprops setObject:u forKey:uid];
+                res=YES;
+            }
+        }
+        [lock1 unlock];
+        return res;
+    }
+}
+-(BOOL) muteAll:(BOOL)yesno secret:(ASFKPrivateSecret *)secret group:(BOOL)grp{
+    if(blacklisted){
+        return NO;
+    }
+    if(grp){
+        BOOL res=YES;
+        [lock1 lock];
+
+        [uprops enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+            BOOL hasuser=[_users containsObject:key] || [key isEqualTo:self.itsOwnerId];
+            if(hasuser){
+                ASFKMBGroupMemberProperties* up=(ASFKMBGroupMemberProperties* )obj;
+                up.isMuted=yesno;
+            }
+            
+        }];
+        [lock1 unlock];
+        return res;
+    }
+    else{
+        BOOL res=YES;
+        [lock1 lock];
+
+        [uprops enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+                ASFKMBGroupMemberProperties* up=(ASFKMBGroupMemberProperties* )obj;
+                up.isMuted=yesno;
+            
+        }];
+        [lock1 unlock];
+        return res;
+
+    }
+}
+-(BOOL) blind:(BOOL)yesno user:(id)uid secret:(ASFKPrivateSecret *)secret{
+    if(blacklisted){
+        return NO;
+    }
+    BOOL res=NO;
+    [lock1 lock];
+    BOOL hasuser=[_users containsObject:uid];
+    if(!hasuser){
+        [lock1 unlock];
+        return NO;
+    }
+    ASFKMBGroupMemberProperties* up=[uprops objectForKey:uid];
+    if(up){
+        up.isBlinded=yesno;
+        res=YES;
+    }
+    [lock1 unlock];
+    return res;
+}
+-(BOOL) blindAll:(BOOL)yesno secret:(ASFKPrivateSecret *)secret{
+    if(blacklisted){
+        return NO;
+    }
+    BOOL res=YES;
+    [lock1 lock];
+
+    [uprops enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+        BOOL hasuser=[_users containsObject:key] || [key isEqualTo:self.itsOwnerId];
+        if(hasuser){
+            ASFKMBGroupMemberProperties* up=(ASFKMBGroupMemberProperties* )obj;
+            up.isBlinded=yesno;
+        }
+        
+    }];
+
+    [lock1 unlock];
+    return res;
+}
+-(BOOL) retractMsg:(id)msgId{
+    if(blacklisted){
+        return NO;
+    }
+    [lock1 lock];
+    [retractionList addObject:msgId];
+    [lock1 unlock];
+    return NO;
+}
 #pragma mark - maintenance
 -(void) runPeriodicProc:(NSDate*)tmpoint{
     if(blacklisted){
@@ -890,26 +1040,31 @@
 }
 #pragma mark - Private methods
 -(void) _testAndRemove:(NSDate*)tmpoint{
-    NSMutableSet* ms=nil;
     [lock1 lock];
-    ms=retractionList;
-    retractionList=[NSMutableSet new];
-    [lock1 unlock];
     NSIndexSet* inset1=[messages indexesOfObjectsPassingTest:^BOOL(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
         Private_ASFKMBMsg* o=obj;
         BOOL rmCandidate=NO;
-            rmCandidate |= [o.props passedDeletionDate:tmpoint];
-        if([ms containsObject: o.props.msgId]){
+        rmCandidate |= [o.props passedDeletionDate:tmpoint];
+        if([retractionList containsObject: o.props.msgId]){
             rmCandidate = YES;
-            [ms removeObject:o.props.msgId];
-
+            [retractionList removeObject:o.props.msgId];
+            if(o->blocked){
+                [o->wlocker lock];
+                [o->wlocker broadcast];
+                [o->wlocker unlock];
+            }
         }
         else{
-            [entranceQ removeObjWithId:o.props.msgId andBlock:^BOOL(id item, id sample, BOOL* stop) {
+            [entranceQ removeObjWithProperty:o.props.msgId andBlock:^BOOL(id item, id sample, BOOL* stop) {
                 Private_ASFKMBMsg* o=item;
                 if (item && sample && [o.msgId isEqualTo:sample])
                 {
                     *stop = YES;
+                    if(o->blocked){
+                        [o->wlocker lock];
+                        [o->wlocker broadcast];
+                        [o->wlocker unlock];
+                    }
                     return YES;
                 }
                 return NO;
@@ -917,10 +1072,10 @@
         }
         return rmCandidate;
     }];
-    [lock1 lock];
+    //[lock1 lock];
 
     [messages removeObjectsAtIndexes:inset1];
-    [entranceQ filterWith:nil];
+    //[entranceQ filterWith:nil];
     
     NSMutableArray* userstoRemove=[NSMutableArray array];
     for (id userid in backusers) {
@@ -956,7 +1111,7 @@
         
         [lock1 unlock];
         
-        id msg=[entranceQ pull];
+        id msg=[entranceQ pullWithCount:msgCount];
         
         if(msg){
 
@@ -1101,6 +1256,10 @@
         return nil;
     }
 
+    if(YES == [self _test_mailboxes_limit:ASFK_PRIVSYM_MAX_MLBX_LIMIT]){
+        [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
+        return nil;
+    }
     ASFKMBContainerProperties* p0=[ASFKMBContainerProperties new];
     if(props==nil)
     {
@@ -1128,6 +1287,10 @@
         return nil;
     }
     
+    if(YES == [self _test_mailboxes_limit:ASFK_PRIVSYM_MAX_MLBX_LIMIT]){
+        [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
+        return nil;
+    }
     ASFKMBContainerProperties* p0=[ASFKMBContainerProperties new];
     if(props==nil)
     {
@@ -1151,6 +1314,10 @@
 }
 
 -(id) cloneGroup:(id)gid newId:(id)newid withProperties:(ASFKMBContainerProperties*)props secret:(ASFKPrivateSecret*)psecret{
+    if(YES == [self _test_mailboxes_limit:ASFK_PRIVSYM_MAX_MLBX_LIMIT]){
+        [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
+        return nil;
+    }
     if(gid!=nil && newid!=nil){
         [lockGroupsDB lock];
         ASFKSomeContainer* sg0=[groups objectForKey:gid];
@@ -1176,7 +1343,7 @@
     return nil;
 }
 -(BOOL) addUser:(id)uid toGroup:(id)gid withProperties:(ASFKMBGroupMemberProperties*)props secret:(ASFKPrivateSecret*)psecret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MLBX_THRESHOLD ];
     if(!gid || !uid){
         return NO;
     }
@@ -1374,22 +1541,24 @@
     if(tm==nil){
         tm=[NSDate date];
     }
-    if(objCount>ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD){
+    if(objCount>ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD){
         if(clbs && clbs->prMemPressure){
             clbs->prMemPressure(tm,objCount);
         }
     }
-    dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
+    //dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
     
-    dispatch_apply(2, dConQ_Background, ^(size_t index) {
-        if(index==0){
+    //dispatch_apply(2, dConQ_Background, ^(size_t index)
+    //{
+        //if(index==0)
+        {
             [lockUsersDB lock];
             [users enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
                 ASFKSomeContainer* sg=(ASFKSomeContainer*)obj;
                 if(sg){
                     if([sg shouldBeDeletedAtDate:tm]){
                         [sg markBlacklisted];
-                        [blacklistedUsers addObject:sg];
+                        //[blacklistedUsers addObject:sg];
                     }
                     else{
                         [sg runPeriodicProc:tm];
@@ -1397,16 +1566,18 @@
                     
                 }
             }];
-
             [lockUsersDB unlock];
-        }else{
+        }
+//        else
+        {
+//
             [lockGroupsDB lock];
             [groups enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
                 ASFKSomeContainer* sg=(ASFKSomeContainer*)obj;
                 if(sg){
                     if([sg shouldBeDeletedAtDate:tm]){
                         [sg markBlacklisted];
-                        [blacklistedGroups addObject:sg];
+                        //[blacklistedGroups addObject:sg];
                     }
                     else{
                         [sg runPeriodicProc:tm];
@@ -1414,20 +1585,47 @@
                     
                 }
             }];
+            [lockGroupsDB unlock];
+        }
+    //};
 
+    dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
+    dispatch_apply(2, dConQ_Background, ^(size_t index){
+        if(index==0){
+            NSMutableArray* deadkeys=[NSMutableArray new];
+            [lockUsersDB lock];
+            [users enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+                ASFKSomeContainer* sg=(ASFKSomeContainer*)obj;
+                if([sg isBlacklisted]){
+                    [deadkeys addObject:key];
+                }
+            }];
+            //blacklistedUsers = [NSMutableArray new];
+            [users removeObjectsForKeys:deadkeys];
+            [lockUsersDB unlock];
+        }
+        else{
+            NSMutableArray* deadkeys=[NSMutableArray new];
+            [lockGroupsDB lock];
+            [groups enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+                ASFKSomeContainer* sg=(ASFKSomeContainer*)obj;
+                if([sg isBlacklisted]){
+                    [deadkeys addObject:key];
+                }
+            }];
+            //blacklistedGroups = [NSMutableArray new];
+            [groups removeObjectsForKeys:deadkeys];
             [lockGroupsDB unlock];
         }
     });
-
     return 0;
 }
 -(NSUInteger) runDaemon:(size_t)sampleSize timepoint:(NSDate*)tm callbacks:(ASFKMBCallbacksMaintenance*)clbs{
     if(tm==nil){
         tm=[NSDate date];
     }
-    [self runDelivery:sampleSize];
     [self runDiscarding:sampleSize timepoint:tm];
-    
+    [self runDelivery:sampleSize];
     [self runPeriodic:sampleSize timepoint:tm callbacks:clbs];
     return 0;
 }
@@ -1505,7 +1703,7 @@
     [lockGroupsDB lock];
     ASFKSomeContainer* sg=[groups objectForKey:gid];
     if(sg && ([sg isPrivateSecretValid:secret matcher:authmgr->secretProcConfig])){
-        res=[sg setMsgQDropPolicy:policy];
+        res=[sg setMsgQDropperPolicy:policy];
     }
     [lockGroupsDB unlock];
     return res;
@@ -1560,7 +1758,7 @@
     [lockUsersDB lock];
     ASFKSomeContainer* sg=[users objectForKey:uid];
     if(sg && ([sg isPrivateSecretValid:secret matcher:authmgr->secretProcConfig])){
-        res=[sg setMsgQDropPolicy:policy];
+        res=[sg setMsgQDropperPolicy:policy];
     }
     [lockUsersDB unlock];
     return res;
@@ -1594,7 +1792,7 @@
 
 #pragma mark - Discarding
 -(BOOL) discardMailbox:(id)uid secret:(ASFKSecret*)secret{
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
     
     if(!uid){
         return NO;
@@ -1628,7 +1826,7 @@
     return res;
 }
 -(BOOL) discardGroup:(id)gid secret:(ASFKSecret*)secret{
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
     
     if(!gid){
         return NO;
@@ -1663,8 +1861,8 @@
     
     return res;
 }
--(BOOL) discardAllUsersWithSecret:(ASFKMasterSecret*)secret{
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+-(BOOL) discardAllMailboxesWithSecret:(ASFKMasterSecret*)secret{
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
     
     if(![authmgr isMasterSecretValid:secret matcher:authmgr->secretProcDiscard]){
         return NO;
@@ -1681,7 +1879,7 @@
 }
 -(BOOL) discardAllGroupsWithSecret:(ASFKMasterSecret*)secret{
     ASFKLog(@"Discarding all groups");
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
     
     if(NO==[authmgr isMasterSecretValid:secret matcher:authmgr->secretProcDiscard]){
         return NO;
@@ -1696,7 +1894,7 @@
 }
 -(BOOL) discardAllMessagesWithSecret:(ASFKMasterSecret*)secret{
     ASFKLog(@"Discarding messages from groups");
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE];
     
     BOOL ms=[authmgr isMasterSecretValid:secret matcher:authmgr->secretProcDiscard];
     if(ms==NO){
@@ -1725,7 +1923,7 @@
 }
 -(BOOL) discardAllMessagesFromMailbox:(id)uid secret:(ASFKPrivateSecret*)secret{
     ASFKLog(@"Discarding ALL messages from user %@",uid);
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE];
     if( !uid){
         return NO;
     }
@@ -1742,7 +1940,7 @@
 }
 -(BOOL) discardAllMessagesFromGroup:(id)gid secret:(ASFKPrivateSecret*)secret{
     ASFKLog(@"Discarding ALL messages from group %@",gid);
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE];
     
     if( !gid){
         return NO;
@@ -1759,7 +1957,7 @@
 }
 -(BOOL) discardUsers:(NSArray*)uids fromGroup:(id)gid  secret:(ASFKPrivateSecret*)secret{
     ASFKLog(@"Discarding ALL users from group %@",gid);
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
     if(!uids || !gid){
         return NO;
     }
@@ -1783,7 +1981,7 @@
     return res;
 }
 -(BOOL) discardUser:(id)uid fromGroup:(id)gid secret:(ASFKPrivateSecret*)secret{
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
     if(!uid || !gid){
         return NO;
     }
@@ -1802,7 +2000,7 @@
     return res;
 }
 -(BOOL) discardAllUsersFromGroup:(id)gid  secret:(ASFKPrivateSecret*)secret{
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
     if(!gid ){
         return NO;
     }
@@ -1815,7 +2013,7 @@
     return YES;
 }
 -(BOOL) discardUserFromAllGroups:(id)uid secret:(ASFKMasterSecret*)secret{
-    [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _discard_relaxMemoryPressure: ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
     if(!uid ){
         return NO;
     }
@@ -1865,7 +2063,7 @@
     [lockGroupsDB unlock];
     return c;
 }
--(NSUInteger) totalUsers{
+-(NSUInteger) totalMailboxes{
     [lockUsersDB lock];
     NSUInteger c=[users count];
     [lockUsersDB unlock];
@@ -2051,7 +2249,7 @@
 
 #pragma mark - Unicasting
 -(id) cast:(id)msg forMailbox:(id)uid withProperties:(ASFKMBMsgProperties*)props secret:(ASFKPrivateSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
     if(!uid || !msg){
         return nil;
     }
@@ -2059,13 +2257,12 @@
     ASFKSomeContainer* sg=[users objectForKey:uid];
     [lockUsersDB unlock];
     if(sg && [sg isPrivateSecretValid:secret matcher:authmgr->secretProcUnicast]){
-
         return [sg addMsg:msg withProperties:props group:NO blockable:NO];
     }
     return nil;
 }
 -(id) cast:(id)msg forGroup:(id)gid withProperties:(ASFKMBMsgProperties*)props secret:(ASFKPrivateSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
     if(!gid || !msg){
         return nil;
     }
@@ -2082,7 +2279,7 @@
     return res;
 }
 -(id) call:(id)msg forMailbox:(id)uid withProperties:(ASFKMBMsgProperties *)props unblockIf:(ASFKCondition*)condition secret:(ASFKPrivateSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
     if(!uid || !msg){
         return nil;
     }
@@ -2098,7 +2295,7 @@
 
 #pragma mark - Multicasting
 -(BOOL) broadcast:(id)msg withProperties:(ASFKMBMsgProperties*)props secret:(ASFKSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
     if(!msg){
         return NO;
     }
@@ -2116,7 +2313,7 @@
     return YES;
 }
 -(id) multicast:(id)msg toMembersOfGroup:(id)g0 secret:(ASFKSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
     if(msg==nil){
         return nil;
     }
@@ -2153,6 +2350,97 @@
     return nil;
 }
 
+#pragma mark - Message hiding & retraction
+-(BOOL) retractMsg:(id)msgId fromGroup:(id)gid secret:(ASFKPrivateSecret*)secret{
+    if(!msgId || !gid)
+        return NO;
+    [lockGroupsDB lock];
+    ASFKSomeContainer* sg=[groups objectForKey:gid];
+    [lockGroupsDB unlock];
+    BOOL res=NO;
+    if(sg && [sg canRetract] &&[sg isPrivateSecretValid:secret matcher:authmgr->secretProcIssuer]){
+        res=[sg retractMsg:msgId];
+    }
+    return res;
+}
+-(BOOL) retractMsg:(id)msgId fromMailbox:(id)uid secret:(ASFKPrivateSecret*)secret{
+    if(!msgId || !uid)
+        return NO;
+    [lockUsersDB lock];
+    ASFKSomeContainer* sg=[users objectForKey:uid];
+    [lockUsersDB unlock];
+    BOOL res=NO;
+    if(sg && [sg canRetract] && [sg isPrivateSecretValid:secret matcher:authmgr->secretProcIssuer]){
+        res=[sg retractMsg:msgId];
+    }
+    return res;
+}
+-(BOOL) mute:(BOOL)yesno user:(id)uid inGroup:(id)gid secret:(ASFKPrivateSecret *)secret{
+    if(!gid || !uid)
+        return NO;
+    [lockGroupsDB lock];
+    ASFKSomeContainer* sg=[groups objectForKey:gid];
+    [lockGroupsDB unlock];
+    if(sg && [sg isPrivateSecretValid:secret matcher:authmgr->secretProcModerate]){
+        return [sg mute:yesno user:uid secret:secret group:YES];
+    }
+    return NO;
+}
+-(BOOL) muteAll:(BOOL)yesno inGroup:(id)gid secret:(ASFKPrivateSecret *)secret{
+    if(!gid )
+        return NO;
+    [lockGroupsDB lock];
+    ASFKSomeContainer* sg=[groups objectForKey:gid];
+    [lockGroupsDB unlock];
+    if(sg && [sg isPrivateSecretValid:secret matcher:authmgr->secretProcModerate]){
+        return [sg muteAll:yesno secret:secret group:YES];
+    }
+    return NO;
+}
+-(BOOL) mute:(BOOL)yesno user:(id)uidguest inMailbox:(id)uidhost secret:(ASFKPrivateSecret *)secret{
+    if(!uidguest || !uidhost)
+        return NO;
+    [lockUsersDB lock];
+    ASFKSomeContainer* sg=[users objectForKey:uidhost];
+    [lockUsersDB unlock];
+    if(sg && [sg isPrivateSecretValid:secret matcher:authmgr->secretProcModerate]){
+        return [sg mute:yesno user:uidguest secret:secret group:NO];
+    }
+    return NO;
+}
+-(BOOL) muteAll:(BOOL)yesno inMailbox:(id)uidhost secret:(ASFKPrivateSecret *)secret{
+    if(!uidhost)
+        return NO;
+    [lockUsersDB lock];
+    ASFKSomeContainer* sg=[users objectForKey:uidhost];
+    [lockUsersDB unlock];
+    if(sg && [sg isPrivateSecretValid:secret matcher:authmgr->secretProcModerate]){
+        return [sg muteAll:yesno secret:secret group:NO];
+    }
+    return NO;
+}
+-(BOOL) blind:(BOOL)yesno user:(id)uidguest inGroup:(id)gid secret:(ASFKPrivateSecret *)secret{
+    if(!gid || !uidguest)
+        return NO;
+    [lockGroupsDB lock];
+    ASFKSomeContainer* sg=[groups objectForKey:gid];
+    [lockGroupsDB unlock];
+    if(sg &&[sg isPrivateSecretValid:secret matcher:authmgr->secretProcModerate]){
+        return [sg blind:yesno user:uidguest secret:secret];
+    }
+    return NO;
+}
+-(BOOL) blindAll:(BOOL)yesno inGroup:(id)gid secret:(ASFKPrivateSecret *)secret{
+    if(!gid )
+        return NO;
+    [lockGroupsDB lock];
+    ASFKSomeContainer* sg=[groups objectForKey:gid];
+    [lockGroupsDB unlock];
+    if(sg &&[sg isPrivateSecretValid:secret matcher:authmgr->secretProcModerate]){
+        return [sg blindAll:yesno secret:secret];
+    }
+    return NO;
+}
 #pragma mark - Private methods
 -(void) _castToSetOfUsers:(NSSet*) uset msg:(id)msg properties:(ASFKMBMsgProperties*)props{
     if(uset && msg){
@@ -2181,12 +2469,12 @@
     
 }
 -(void) _castToArrayOfUsers:(NSArray*)uarr msg:(id)msg properties:(ASFKMBMsgProperties*)props{
-    [lockDB lock];
-    NSUInteger defrefcount= [deferredMulticastUsers count];
-    [lockDB unlock];
-    if(defrefcount>ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD){
-        [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD ];
-    }
+//    [lockDB lock];
+//    NSUInteger defrefcount= [deferredMulticastUsers count];
+//    [lockDB unlock];
+//    if(defrefcount>ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD){
+        [self _cast_relaxMemoryPressure: ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE];
+//    }
     if(uarr && msg){
         [props setPropMsgId:[NSUUID UUID]];
         [lockDB lock];
@@ -2216,26 +2504,40 @@
     NSUInteger defrefcount0= [deferredBroadcasts count];
     NSUInteger defrefcount1= [deferredMulticastUsers count];
     [lockDB unlock];
-    if(defrefcount0 > ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD || defrefcount1 > ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD){
+    
+    if(defrefcount0 > ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD || ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD > ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD){
         [self runDelivery:sampleSize ];
     }
+    
 }
 -(void) _discard_relaxMemoryPressure:(size_t)sampleSize{
+    //if(NO==[self _test_mailboxes_limit:ASFK_PRIVSYM_MEM_PRESSURE_MLBX_THRESHOLD])
+    //{
+        WASFKLog(@"Too many mailboxes or groups created!");
+    [self runDiscarding:sampleSize timepoint:[NSDate date]] ;
+    //}
+        
+}
+-(BOOL) _test_mailboxes_limit:(NSUInteger)limit{
     [lockDB lock];
     NSUInteger defrefcount0= [blacklistedUsers count];
     NSUInteger defrefcount1= [blacklistedGroups count];
     [lockDB unlock];
-    if(defrefcount0 > ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD || defrefcount1 > ASFK_PRIVSYM_MEM_PRESSURE_THRESHOLD){
-        [self runDiscarding:sampleSize timepoint:[NSDate date]];
-    }
+    [lockUsersDB lock];
+    NSUInteger ucount= [users count];
+    [lockUsersDB unlock];
+    [lockGroupsDB lock];
+    NSUInteger gcount= [groups count];
+    [lockGroupsDB unlock];
     
+    return limit<=defrefcount0+defrefcount1+ucount+gcount;
 }
--(NSArray<ASFKSomeContainer*>*) _repackItems:(NSMutableArray*)container sampleSize:(size_t)iter dispQ:(dispatch_queue_t)dq{
+-(NSArray<ASFKSomeContainer*>*) _repackItems:(NSMutableArray*)containers sampleSize:(size_t)iter dispQ:(dispatch_queue_t)dq{
     NSMutableArray<ASFKSomeContainer*>* ma=[NSMutableArray array];
     
     for (NSUInteger i=0; i<iter; ++i) {
         [lockDB lock];
-        id obj=[container firstObject];
+        id obj=[containers firstObject];
         [lockDB unlock];
         if(!obj){
             break;
@@ -2256,8 +2558,8 @@
             }
             if([obj count]==0){
                 [lockDB lock];
-                if([container count]>0){
-                    [container removeObjectAtIndex:0];
+                if([containers count]>0){
+                    [containers removeObjectAtIndex:0];
                 }
                 [lockDB unlock];
             }
@@ -2267,14 +2569,13 @@
         else{
             [ma addObject:(ASFKSomeContainer*)obj];
             [lockDB lock];
-            if([container count]>0){
-                [container removeObjectAtIndex:0];
+            if([containers count]>0){
+                [containers removeObjectAtIndex:0];
             }
             [lockDB unlock];
         }
-        
-        
     }
+    
     return ma;
 }
 @end

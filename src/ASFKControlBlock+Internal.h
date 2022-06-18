@@ -12,14 +12,16 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+//
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 
 #import "ASFKBase.h"
 
 @interface ASFKControlBlock (Internal)
+//-(void) setStopped:(BOOL)stop;
+//-(void) setTotalProcessorsNum:(NSUInteger)procs;
 -(void) setResultPosition:(NSUInteger)proc;
-
+//-(NSUInteger) getTotalProcessorsNum;
 -(NSUInteger) getResultPosition;
 -(void) setProgressRoutine:(ASFKProgressRoutine)progress;
 -(void) setSecondaryIndex:(NSUInteger)secind;

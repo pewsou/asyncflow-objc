@@ -32,13 +32,13 @@
  6. multicast                                                     x          x           x
  7. moderation - blinding/muting of members                       x          x
  8. security - changing secrets for Mailbox, Group, Global        x                      x
- 9. issuer - retraction/hiding of posted messages                x          x
+ 9. issuer - retraction/hiding of posted messages                 x          x
  10. config - update of mailbox operational parameters            x
  11. hosting - addition/removal of members to/from Group mailbox  x          x
  
  Secrets lifetime and configuration:
  All secrets have unlimited lifetime by default, which however can be configured to be temporary: for limited time period, limited number of use attempts or custom lifetime shortening criteria. When lifetime is ended the secret is invalidated forever. Manual invalidation is available too.
- Any secret may be configured to have different porperties. Any property may be configured only once.
+ Any secret may be configured to have different properties. Any property may be configured only once.
  */
 
 typedef BOOL(^ASFKSecretComparisonProc)(id secret1,id secret2);

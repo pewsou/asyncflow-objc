@@ -12,7 +12,6 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 #define ASFK_LOCAL_REPLACE 0
@@ -41,10 +40,8 @@ public:
 
 @end
 @implementation ASFKPipelineSession{
-    
-    std::atomic<long> busyCount;
+    std::atomic<NSInteger> busyCount;
     NSMutableArray<ASFKThreadpoolQueue*>* dataQueues;
-    NSRange execRange;
     std::priority_queue<sASFKPrioritizedQueueItem, std::vector<sASFKPrioritizedQueueItem>, ASFKComparePriorities> pq;
     ASFKThreadpoolQueue* queueZero;
     NSLock* lock;
@@ -70,7 +67,6 @@ public:
     excond=[[ASFKExpirationCondition alloc]init];
     isStopped=NO;
     paused=NO;
-    execRange=NSMakeRange(0, 1);
     dataQueues=[NSMutableArray array];
     queueZero=[[ASFKThreadpoolQueue alloc]init];
     if(sessionId){
@@ -87,11 +83,10 @@ public:
         ASFKLog(@"ASFKPipelineSession: Stub summary");
         return data;
     };
-    expirationSummary=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
-        ASFKLog(@"ASFKPipelineSession: Stub expiration summary");
-        return data;
-    };
+    expirationSummary=nil;
+    onPauseNotification=nil;
     cancellationHandler=^id(id identity){
+        ASFKLog(@"Default cancellation handler");
         return nil;
     };
 }
@@ -253,9 +248,9 @@ public:
     [lock unlock];
 
 }
--(void) addRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)ps{
-
-}
+//-(void) addRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)ps{
+//
+//}
 -(void) replaceRoutinesWithArray:(NSArray<ASFKExecutableRoutine>*)ps{
 
     [lock lock];
@@ -296,13 +291,13 @@ public:
 }
 -(void)pause{
     [lock lock];
-    cblk->paused=YES;
+    [cblk setPaused: YES];
     [lock unlock];
 
 }
 -(void)resume{
     [lock lock];
-    cblk->paused=NO;
+    [cblk setPaused: NO];
     [lock unlock];
 
 }
@@ -324,8 +319,13 @@ public:
 }
 
 -(eASFKThreadpoolExecutionStatus) select:(long)selector routineCancel:(ASFKCancellationRoutine)cancel{
-
     [lock lock];
+    BOOL tval=YES;
+    if(paused.compare_exchange_strong(tval,NO)){
+        [dataQueues enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(ASFKThreadpoolQueue * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+            [obj unoccupy];
+        }];
+    }
     [self _adoptDataFromZeroQueue];
 
     if(isStopped.load()){
@@ -345,10 +345,32 @@ public:
         [lock unlock];
         [self flush];
         cancel(self.sessionId);
-        cru(self.sessionId);
+        [self _invokeCancellationHandler:cru identity:self.sessionId];
+//        cru(self.sessionId);
         DASFKLog(@"Cancelling... Pt 0, session %@",self.sessionId);
         [self forgetAllSessions];
         return eASFK_ES_WAS_CANCELLED;
+    }
+    if(busyCount==0){
+        ASFKExecutableRoutineSummary expirproc=expirationSummary;
+        ASFKExpirationCondition* trp=excond;
+        //std::vector<long long> bc={busyCount.load()};
+        if(trp){
+            [trp setSampleLongLong:busyCount];
+            if([trp isConditionMet:nil]){
+                [lock unlock];
+                DASFKLog(@"<1> Expiring session %@" ,self.sessionId);
+                [self flush];
+                cancel(self.sessionId);
+                if(expirproc){
+                   expirproc(cblk,@{},nil);
+                }
+                [self forgetAllSessions];
+                self->cancellationProc(self.sessionId);
+                return eASFK_ES_WAS_CANCELLED;
+            }
+        }
+        
     }
     
     ASFKExecutableRoutineSummary summary;
@@ -376,7 +398,8 @@ public:
                 [lock unlock];
                 [self flush];
                 cancel(self.sessionId);
-                cru(self.sessionId);
+                [self _invokeCancellationHandler:cru identity:self.sessionId];
+                //cru(self.sessionId);
                 [self forgetAllSessions];
                 DASFKLog(@"Cancelling... Pt 1, session %@",self.sessionId);
                 break;
@@ -419,7 +442,8 @@ public:
                     [lock unlock];
                     [self flush];
                     cancel(self.sessionId);
-                    cru(self.sessionId);
+                    [self _invokeCancellationHandler:cru identity:self.sessionId];
+                    //cru(self.sessionId);
                     [self forgetAllSessions];
                     DASFKLog(@"Cancelling... Pt 2, session %@",self.sessionId);
                     break;
@@ -432,14 +456,21 @@ public:
                 if(summary){
                     res=summary(cblk,@{},result);
                 }
-                std::vector<long long> bc={busyCount.load()};
-                if(trp && [trp isConditionMetForLonglongValues:bc data:result]){
-                    ASFKLog(@"Expiring session %@",self.sessionId);
-                    [self flush];
-                    cancel(self.sessionId);
-                    expirproc(cblk,@{},res);
-                    break;
+                if(trp){
+                    [trp setSampleLongLong:busyCount];
+                    if([trp isConditionMet:result]){
+                        DASFKLog(@"<2> Expiring session %@",self.sessionId);
+                        [self flush];
+                        cancel(self.sessionId);
+                        if(expirproc){
+                           expirproc(cblk,@{},res); 
+                        }
+                        [self forgetAllSessions];
+                        self->cancellationProc(self.sessionId);
+                        break;
+                    }
                 }
+                
             }
             else if(curpos<dqcount-1){
                 [lock unlock];
@@ -511,10 +542,10 @@ public:
 }
 #pragma mark - Private methods
 -(void) _resetQueues{
-    for (ASFKThreadpoolQueue* q in dataQueues) {
-        [q reset];
-        [q unoccupy];
-    }
+    [dataQueues enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(ASFKThreadpoolQueue * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+        [obj reset];
+        [obj unoccupy];
+    }];
 }
 -(void) _resetPriorityQueue{
     while (!pq.empty()) {
@@ -550,4 +581,5 @@ public:
     }
     
 }
+
 @end

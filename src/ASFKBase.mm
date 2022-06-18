@@ -21,22 +21,26 @@
 #include <mach/mach_time.h>
 #import "ASFKQueue+Internal.h"
 
-@implementation ASFKExecutionParams{}
+@implementation ASFKExecutionParams{
+    
+}
 -(id) init{
     self = [super init];
     if(self) {
         progressProc=nil;
-        SummaryRoutine=nil;
+        summaryRoutine=nil;
         procs=nil;
         cancellationProc=nil;
         expCondition=nil;
-        
+        onPauseProc=nil;
     }
     return self;
 }
 @end
 
-@implementation ASFKThreadpoolSession
+@implementation ASFKThreadpoolSession{
+    std::atomic<BOOL> cancelled;
+}
 -(id)init{
     self=[super init];
     if(self){
@@ -51,11 +55,13 @@
     }
     return self;
 }
+
 -(void)_TPSinitWithSession:(ASFK_IDENTITY_TYPE)sessionId andSubsession:(ASFK_IDENTITY_TYPE)subId{
     procs=[NSMutableArray array];
     excond=[[ASFKExpirationCondition alloc]init];
     isStopped=NO;
     paused=NO;
+    onPauseNotification=nil;
     if(sessionId){
         cblk= [self newSession:sessionId andSubsession:subId];
     }else{
@@ -63,19 +69,29 @@
     }
     
     self.sessionId=cblk.sessionId;
-    passSummary=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
-        ASFKLog(@"ASFKPipelineSession: Stub summary");
-        return data;
-    };
-    expirationSummary=(id)^(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data){
-        ASFKLog(@"ASFKPipelineSession: Stub expiration summary");
-        return data;
-    };
+    
+    passSummary=nil;
+    expirationSummary=nil;
+    onPauseNotification=nil;
+    cancelled=NO;
     cancellationHandler=^id(id identity){
+        ASFKLog(@"Default cancellation handler");
         return nil;
     };
+    
 }
-
+-(void) _invokeCancellationHandler:(ASFKCancellationRoutine) cru identity:(id)identity{
+    BOOL tval=NO;
+    if(cru==nil){
+        return;
+    }
+    
+    if(cancelled.compare_exchange_strong(tval,YES))
+    {
+        DASFKLog(@"Cancellation on the way, session %@",identity);
+        cru(identity);
+    }
+}
 @end
 
 @implementation ASFKGlobalQueue{
@@ -112,6 +128,7 @@
     __block dispatch_queue_t q=[self _resolveQueue:qos];
     if(blocking){
         if(blarray && [blarray count]>0){
+            //ASFKLog(@"deploying %lu tasks",(unsigned long)[blarray count]);
             dispatch_apply([blarray count], q, ^(size_t index) {
                 dispatch_block_t b= [blarray objectAtIndex:index];
                 b();
@@ -193,7 +210,7 @@
 -(void)cancelAll{
     [lkNonLocal lock];
     [ctrlblocks enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
-        ASFKControlBlock* cb = (ASFKControlBlock*)obj;// [ctrlblocks objectForKey:key];
+        ASFKControlBlock* cb = (ASFKControlBlock*)obj;
         if(cb){
             [cb cancel];
         }else{
@@ -245,5 +262,6 @@
     }
     return NO;
 }
+
 
 @end

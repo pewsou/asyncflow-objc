@@ -12,18 +12,13 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-//
-//  Created by Boris Vigman on 16/05/2021.
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>
 #import "ASFKExpirationCondition.h"
 #include <atomic>
-//typedef enum e_ASFKMBPoppingPolicy{
-//    e_ASFKMB_POP_OWNER_ONLY,
-//    e_ASFKMB_POP_FIRST_POPPER
-//} eASFKMBPoppingPolicy;
+
 typedef void(^ASFKMbNRunOnContainerReadRoutine)(id cId,NSDate* tstamp, NSArray* data);
 /*!
  @brief custom filter of incoming messages.

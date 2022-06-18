@@ -12,7 +12,6 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 #ifndef __A_S_F_K_Mailbox_h__
@@ -233,7 +232,7 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
  @param secret secret; master secret is required; if no secret set then nil must be provided.
  @return YES for success, NO otherwise.
  */
--(BOOL) discardAllUsersWithSecret:(ASFKMasterSecret*)secret;
+-(BOOL) discardAllMailboxesWithSecret:(ASFKMasterSecret*)secret;
 /*!
  @brief removes ALL messages from ALL groups
  @discussion all messages in all groups will be discarded.
@@ -272,7 +271,7 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
  @discussion counts only unique users: user registered in several groups counts as 1;
  @return Number of users.
  */
--(NSUInteger) totalUsers;
+-(NSUInteger) totalMailboxes;
 /*!
  @brief counts ALL messages delivered to some group.
  @discussion counts only messages that are not discarded; counts only unique messages: message delivered to several users counts as 1;
@@ -296,15 +295,15 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
 #pragma mark - Reading & Popping
 /*!
  @brief reading in blocking maner.
- @discussion When called, the function reads all available messages; number of messages to read is defined by 'skipAndTake' range. When number of available messages is less than required, the call will not return until new messages arrive. When message from blocking call received, the calling thread is released.
+ @discussion When called, the method reads all available messages; number of messages to read is defined by 'skipAndTake' range. When number of available messages is less than required, the call will not return until new messages arrive. When message from blocking call received, the calling thread is released.
  @param skipAndTake range of retrieval; loc represents offset from beginning, number of messages to skip; length represents number of items to retrieve; if 0 then function returns when new messages arrive or waiting period expires.
  @param mid user ID; if nil, read fails.
+ @param condition custom unblocking condition; may bu nil;
  @param secret private (associated with this group) secret is required; if no secret set then nil must be provided. If provided secret does not match the stored one, operation fails.
  @return array of available messages; size of the array is less or equal to msgcount; if there is no message, returns empty array.
  */
 -(NSArray*) waitAndReadMsg:(NSRange)skipAndTake fromMailbox:(id)mid unblockIf:(ASFKMbLockConditionRoutine)condition withSecret:(ASFKPrivateSecret*)secret;
 
-//-(NSArray*) waitAndReadMsgFromGroup:(id)gid unblockIf:(ASFKMbLockConditionRoutine) condition withSecret:(ASFKPrivateSecret*)secret;
 /*!
  @brief reads specified number of earliest messages delivered to given mailbox.
  @discussion After reading messages are NOT deleted from the queue; fetched messages ordered earliest to latest. If messages arrives from blocking call - the corresponding message is read, calling thread is NOT released.
@@ -379,7 +378,7 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
 -(void) popEarliestMsg:(NSRange)skipAndTake fromGroup:(id)gid forUser:(id)uid withSecret:(ASFKPrivateSecret*)secret;
 #pragma mark - Call interface
 /*!
- @brief delivers specified message synchronously to the specified mailbox. This method returns when the message when call was improper or message read by the receiver. Being invoked, this method blocks the calling thread, until some message read or a condition met. Examples of unblocking conditions: time period elapsed; or some custom condition may be introduced.
+ @brief delivers specified message synchronously to the specified mailbox. This method returns when it was called improperly or message read by the receiver. Being invoked, this method blocks the calling thread, until the message is read or a condition met. Examples of unblocking conditions: time period elapsed; or some custom condition may be introduced.
  @discussion delivered message can not be retracted.
  @param msg a message to be delivered; can be nil.
  @param uid user ID; may be nil.
@@ -424,6 +423,55 @@ typedef void(^ASFKMbLockConditionRoutine)(id cid, BOOL group, id msgId, id msg);
  @return YES for successful delivery, NO otherwise.
  */
 -(BOOL) broadcast:(id)msg withProperties:(ASFKMBMsgProperties*)props secret:(ASFKSecret*)secret;;
+/*!
+ @brief retracts delivered message from specific group.
+ @discussion poster can retract posted message while it is available for retraction;the message is available for retraction until it has been popped or its lifetime has ended.
+ @param msgId retractable message ID; if nil, action fails.
+ @param gid group ID; if nil, action fails.
+ */
+#pragma mark - Message hiding & retraction
+-(BOOL) retractMsg:(id)msgId fromGroup:(id)gid secret:(ASFKPrivateSecret*)secret;;
+/*!
+ @brief retracts delivered message from specific user.
+ @discussion poster can retract posted message while it is available for retraction;the message is available for retraction until it has been popped or its lifetime has ended.
+ @param msgId retractable message ID; if nil, action fails.
+ @param uid user ID; if nil, action fails.
+ @return YES for succesful retraction, NO otherwise.
+ */
+-(BOOL) retractMsg:(id)msgId fromMailbox:(id)uid secret:(ASFKPrivateSecret*)secret;;
+/*!
+ @brief prevents given user from posting in given group.
+ @discussion muted user can access messages delivered to group but cannot deliver messages to the group; to be muted user may or may not be member of this group.
+ @param yesno YES for muting, NO for unmuting.
+ @param uid user ID; if nil, action fails.
+ @param gid group ID; if nil, action fails.
+ @param secret private secret of this group; nil means no secret set.
+ @return YES for succesful muting, NO otherwise.
+ */
+-(BOOL) mute:(BOOL) yesno user:(id)uid inGroup:(id)gid secret:(ASFKPrivateSecret*)secret;
+-(BOOL) muteAll:(BOOL) yesno inGroup:(id)gid secret:(ASFKPrivateSecret*)secret;
+/*!
+ @brief prevents given user from posting in given mailbox.
+ @discussion muted user cannot deliver messages to the specified target.
+ @param yesno YES for muting, NO for unmuting.
+ @param guestId guest ID; if nil, action fails.
+ @param hostId mailbox owner's ID; if nil, action fails.
+ @param secret private secret of this group; nil means no secret set.
+ @return YES for succesful muting, NO otherwise.
+ */
+-(BOOL) mute:(BOOL) yesno user:(id)guestId inMailbox:(id)hostId secret:(ASFKPrivateSecret*)secret;
+-(BOOL) muteAll:(BOOL) yesno inMailbox:(id)hostId secret:(ASFKPrivateSecret*)secret;
 
+/*!
+ @brief prevents given user from accessing messages in given group.
+ @discussion blinded user can post messages to group but cannot read or pop; to be blinded user may or may not be member of this group.
+ @param yesno YES for blinding, NO for unblinding.
+ @param uid user ID; if nil, action fails.
+ @param gid group ID; if nil, action fails.
+ @param secret private secret of this group; nil means no secret set.
+ @return YES for succesful blinding, NO otherwise.
+ */
+-(BOOL) blind:(BOOL) yesno user:(id)uid inGroup:(id)gid secret:(ASFKPrivateSecret*)secret;
+-(BOOL) blindAll:(BOOL) yesno inGroup:(id)gid secret:(ASFKPrivateSecret*)secret;
 @end
 #endif /*#define __A_S_F_K_Mailbox_h__*/

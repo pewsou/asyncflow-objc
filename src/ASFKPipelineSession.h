@@ -12,15 +12,12 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
 #ifndef ASFKPipelineSession_h
 #define ASFKPipelineSession_h
 #import "ASFKBase.h"
-
-
 
 @interface ASFKPipelineSession : ASFKThreadpoolSession
 @end

@@ -12,7 +12,6 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -24,25 +23,25 @@
  */
 @interface ASFKPipelinePar : ASFKLinearFlow
 
--(BOOL) isPausedSession:(ASFK_IDENTITY_TYPE)sessionId;
+-(BOOL) isPausedSession:(_Null_unspecified ASFK_IDENTITY_TYPE)sessionId;
+-(long long) itemsCountForSession:(_Null_unspecified id)sessionId;
 
 /*!
  @brief Equals YES if session with given identity exists AND is still processing data batch ; NO otherwise.
  */
--(BOOL) isBusySession:(ASFK_IDENTITY_TYPE)sessionId;
+-(BOOL) isBusySession:(_Null_unspecified ASFK_IDENTITY_TYPE)sessionId;
 
-+(long long) runningSessionsCount;
-+(long long) pausedSessionsCount;
-/*!
- @brief Cancels ALL sessions created by ALL instances.
- */
-+(void)cancelAllGlobally;
+-(long long) getRunningSessionsCount;
+-(long long) getPausedSessionsCount;
+
 /*!
  @brief Cancels ALL sessions created by this instance.
  */
 -(void)cancelAll;
--(void)cancelSession:(ASFK_IDENTITY_TYPE)sessionId;
-
+/*!
+ @brief Cancels session with given id.
+ */
+-(void)cancelSession:(_Null_unspecified ASFK_IDENTITY_TYPE)sessionId;
 /*!
  @brief flushes all queued items for all sessions created by this instance.
  */
@@ -50,12 +49,8 @@
 /*!
  @brief flushes all queued items for given session ID.
  */
--(void)flushSession:(ASFK_IDENTITY_TYPE)sessionId;
+-(void)flushSession:(_Null_unspecified ASFK_IDENTITY_TYPE)sessionId;
 
-/*!
- @brief flushes all queued items for all sessions.
- */
-+(void)flushAllGlobally;
 /*!
  @brief flushes all queued items for all sessions created by this instance.
  */
@@ -63,12 +58,8 @@
 /*!
  @brief flushes all queued items for given session ID.
  */
--(void)pauseSession:(ASFK_IDENTITY_TYPE)sessionId;
+-(void)pauseSession:(_Null_unspecified ASFK_IDENTITY_TYPE)sessionId;
 
-/*!
- @brief flushes all queued items for all sessions.
- */
-+(void)pauseAllGlobally;
 /*!
  @brief flushes all queued items for all sessions created by this instance.
  */
@@ -76,12 +67,8 @@
 /*!
  @brief flushes all queued items for given session ID.
  */
--(void)resumeSession:(ASFK_IDENTITY_TYPE)sessionId;
+-(void)resumeSession:(_Null_unspecified ASFK_IDENTITY_TYPE)sessionId;
 
-/*!
- @brief flushes all queued items for all sessions.
- */
-+(void)resumeAllGlobally;
 /*!
  @brief sets new class of QoS (i.e. thread priority).
  @param newqos required class of Quality of Service . Allowed values are:QOS_CLASS_USER_INTERACTIVE, QOS_CLASS_UTILITY, QOS_CLASS_BACKGROUND. By default QOS_CLASS_BACKGROUND is set. The parameter will be in effect after restart.
@@ -92,11 +79,11 @@
  @brief returns list of session ID's for all sessions created by this instance.
  @return Array of session ID's.
  */
--(NSArray*) getSessions;
+-(NSArray* _Null_unspecified) getSessions;
 /*!
  @brief creates new non-expiring session associated with this instance.
- @param exparams collection of session properties.
- @param sid optional name of session.
+ @param exparams collection of session properties. May be nil; in that case default parameters will be adopted.
+ @param sid optional name of session. If nil, then random value will be assigned.
  @return Dictionary of return values.
  */
 -(NSDictionary* _Nonnull) createSession:(ASFKExecutionParams*_Nullable) exparams sessionId:(id _Nullable ) sid;

@@ -45,11 +45,23 @@
     minQSize=0;
     maxQSize=ULONG_MAX;
 }
--(void) setMaxQSize:(NSUInteger)size{
+-(BOOL) setMaxQSize:(NSUInteger)size{
+    BOOL r=YES;
+    if(size <= minQSize){
+        r=NO;
+        WASFKLog(@"new upper limit is not greater than lower limit");
+    }
     maxQSize=size;
+    return r;
 }
--(void) setMinQSize:(NSUInteger)size{
+-(BOOL) setMinQSize:(NSUInteger)size{
+    BOOL r=YES;
+    if(size >= maxQSize){
+        r=NO;
+        WASFKLog(@"new lower limit is not less than upper limit");
+    }
     minQSize=size;
+    return r;
 }
 -(void) setDroppingPolicy:(eASFKQDroppingPolicy)policy{
     dpolicy=policy;
@@ -59,14 +71,16 @@
     itsFilter = dropAlg;
     [lkNonLocal unlock];
 }
--(BOOL) removeObjWithId:(id)obj andBlock:(BOOL (^)(id item,id sample, BOOL* stop)) blk{
+-(BOOL) removeObjWithProperty:(id)obj andBlock:(BOOL (^)(id item,id sample, BOOL* stop)) blk{
     BOOL r=NO;
-    NSMutableIndexSet* mis=[NSMutableIndexSet new];
-    if(obj){
+    
+    if(obj && blk){
+        NSMutableIndexSet* mis=[NSMutableIndexSet new];
         NSUInteger c=0;
         [lkNonLocal lock];
         BOOL stop = NO;
         for (id o in q) {
+            r=YES;
             if(blk(o,obj,&stop)){
                 [mis addIndex:c];
             }
@@ -77,10 +91,8 @@
             }
         }
         [q removeObjectsAtIndexes:mis];
-        [lkNonLocal unlock];
-        
-        [mis removeAllIndexes];
 
+        [lkNonLocal unlock];
     }
     return r;
 }
@@ -116,21 +128,42 @@
                 res=NO;
             }
             else if(dpolicy == E_ASFK_Q_DP_ALGO){
-                NSMutableIndexSet* iset=[NSMutableIndexSet new];
-                res=[itsFilter filterCandidatesInArray:q saveToIndexSet:iset];
-                if(res){
-                    [q removeObjectsAtIndexes:iset];
-                    [q addObject:item];
-                    res=YES;
-                }
-                else{
+                ASFKFilter* ft=nil;
+                ft=itsFilter;
+                if(nil==ft){
                     res=NO;
                 }
+                else{
+                    NSMutableIndexSet* iset=[NSMutableIndexSet new];
+                    res=[ft filterCandidatesInArray:q passing:YES saveToIndexSet:iset];
+                    if(res){
+                        [q removeObjectsAtIndexes:iset];
+                        [q addObject:item];
+                        res=YES;
+                    }
+                    else{
+                        res=NO;
+                    }
+                }
+                
             }
         }
         [lock unlock];
     }
     return res;
+}
+-(id)pullWithCount:(NSInteger) count{
+    [lock lock];
+    NSUInteger qc = [q count];
+    id item=[q firstObject];
+    if (item && qc + count >= minQSize) {
+        [q removeObjectAtIndex:0];
+    }
+    else{
+        item=nil;
+    }
+    [lock unlock];;
+    return item;
 }
 -(id)pull{
     [lock lock];
@@ -148,19 +181,19 @@
 }
 -(void) filterWith:(ASFKFilter*)filter{
     ASFKFilter* ft=filter;
+    [lock lock];
     if(!ft)
     {
         ft=itsFilter;
     }
     if(ft){
         NSMutableIndexSet* iset=[NSMutableIndexSet new];
-        BOOL res=[itsFilter filterCandidatesInArray:q saveToIndexSet:iset];
+        BOOL res=[ft filterCandidatesInArray:q passing:YES saveToIndexSet:iset];
         if(res){
-            [lock lock];
             [q removeObjectsAtIndexes:iset];
-            [lock unlock];
         }
     }
+    [lock unlock];
 }
 
 @end

@@ -18,7 +18,7 @@
 #import <Foundation/Foundation.h>
 #import "ASFKPrjConfig.h"
 
-#define ASFK_VERSION @"0.2.2"
+#define ASFK_VERSION @"0.3.1"
 #define ASFK_IDENTITY_TYPE id
 
 #ifdef __ASFK_VERBOSE_PRINTING__
@@ -80,11 +80,25 @@
 
 #import <atomic>
 #import <vector>
-
+/*!
+ @brief modes of dropping
+ */
 enum eASFKQDroppingPolicy{
+    /*!
+     @brief drop the newest item
+     */
     E_ASFK_Q_DP_TAIL=0,
+    /*!
+     @brief drop the oldest item
+     */
     E_ASFK_Q_DP_HEAD,
+    /*!
+     @brief don't drop, reject new candidate
+     */
     E_ASFK_Q_DP_REJECT,
+    /*!
+     @brief select item for dropping using some algorithm
+     */
     E_ASFK_Q_DP_ALGO
 };
 
@@ -128,6 +142,8 @@ typedef id ( ^ASFKThreadpoolSummary)(void);
  @return YES if flush attempt was issued; NO otherwise.
  */
 -(BOOL) flushRequested;
+-(void) setPaused:(BOOL) yesno;
+-(BOOL) isPaused;
 -(void) reset;
 @end
 
@@ -158,7 +174,7 @@ typedef id ( ^ASFKProgressRoutine)(NSUInteger stage,NSUInteger accomplished ,NSU
     @protected std::atomic<NSUInteger> indexSecondary;
 
     @public std::atomic< BOOL> flushed;
-    @public std::atomic< BOOL> paused;
+    @protected std::atomic< BOOL> paused;
 }
 @property (readonly) ASFK_IDENTITY_TYPE sessionId;
 @property (readonly) ASFK_IDENTITY_TYPE parentId;
@@ -175,6 +191,7 @@ typedef id ( ^ASFKExecutableRoutine)(id<ASFKControlCallback> controlBlock, id da
 
 typedef id ( ^ASFKExecutableRoutineSummary)(id<ASFKControlCallback> controlBlock,NSDictionary* stats,id data);
 typedef id ( ^ASFKCancellationRoutine)(id identity);
+typedef id ( ^ASFKOnPauseNotification)(id identity, BOOL paused);
 
 /**
  @param controlBlock object controlling the execution
@@ -268,10 +285,11 @@ typedef BOOL  ( ^ASFKExecutableRoutineLoopConditional)(id<ASFKControlCallback> c
 
 @interface ASFKExecutionParams:NSObject{
 @public ASFKProgressRoutine progressProc;
-@public ASFKExecutableRoutineSummary SummaryRoutine;
+@public ASFKExecutableRoutineSummary summaryRoutine;
 @public NSArray<ASFKExecutableRoutine>* procs;
 @public ASFKCancellationRoutine cancellationProc;
 @public ASFKExpirationCondition* expCondition;
+@public ASFKOnPauseNotification onPauseProc;
 }
 @end
 
@@ -305,15 +323,19 @@ typedef enum enumASFKPipelineExecutionStatus{
     eASFK_ES_SKIPPED_MAINT
 } eASFKThreadpoolExecutionStatus;
 
+typedef id ( ^ASFKThreadpoolSessionCancelProc)(id sessionId);
 @interface ASFKThreadpoolSession : ASFKBase{
+    
     @public     ASFKControlBlock* cblk;
     @protected ASFKExecutableRoutineSummary passSummary;
     @protected ASFKExecutableRoutineSummary expirationSummary;
-    @protected ASFKCancellationRoutine cancellationHandler;
+    @protected ASFKCancellationRoutine cancellationHandler; 
     @protected NSMutableArray<ASFKExecutableRoutine>* procs;
     @protected ASFKExpirationCondition* excond;
+    @public    ASFKOnPauseNotification onPauseNotification;
     @public    std::atomic<BOOL> isStopped;
     @public    std::atomic<BOOL> paused;
+    @public    ASFKThreadpoolSessionCancelProc cancellationProc;
 }
 @property  ASFK_IDENTITY_TYPE sessionId;
 
@@ -326,7 +348,6 @@ typedef enum enumASFKPipelineExecutionStatus{
 -(void) postDataItemsAsUnorderedSet:(NSSet*)set;
 -(void) postDataItemsAsDictionary:(NSDictionary*)dict;
 -(void) postDataItem:(id)dataItem;
--(void) addRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)procs;
 -(void) replaceRoutinesWithArray:(NSArray<ASFKExecutableRoutine>*)procs;
 -(void) setProgressRoutine:(ASFKProgressRoutine)progress;
 -(void) setSummary:(ASFKExecutableRoutineSummary)sum;
@@ -335,12 +356,10 @@ typedef enum enumASFKPipelineExecutionStatus{
 -(void) setCancellationHandler:(ASFKCancellationRoutine)cru;
 -(void) setExpirationCondition:(ASFKExpirationCondition*) trop;
 -(BOOL) hasSessionSummary;
-
 -(BOOL) isBusy;
-
 -(long) procsCount;
 -(long) itemsCount;
-
+-(void) _invokeCancellationHandler:(ASFKCancellationRoutine) cru identity:(id)identity;
 @end
 
 #import "ASFKFilter.h"

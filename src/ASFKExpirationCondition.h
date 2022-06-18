@@ -12,29 +12,42 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 
 #ifndef ASFKExpirationCondition_h
 #define ASFKExpirationCondition_h
 #import <Foundation/Foundation.h>
 #include <vector>
-@interface ASFKCondition :NSObject
+@interface ASFKCondition :NSObject{
+    @protected NSLock* lock;
+}
+-(BOOL) isConditionMet:(id) data;
 -(BOOL) isConditionMetForDoubleValues:(std::vector<double>&)values data:(id)data;
 -(BOOL) isConditionMetForBoolValues:(std::vector<BOOL>&)values data:(id)data;
--(BOOL) isConditionMetForULonglongValues:(std::vector<unsigned long long>&)values data:(id)data;
--(BOOL) isConditionMetForLonglongValues:(std::vector<long long>&)values data:(id)data;
+-(BOOL) isConditionMetForULonglongValues:(std::vector<NSUInteger>&)values data:(id)data;
+-(BOOL) isConditionMetForLonglongValues:(std::vector<NSInteger>&)values data:(id)data;
 -(BOOL) isConditionMetAfterDateValue:(NSDate*)aDate data:(id)data;
 -(BOOL) isConditionMetForObject:(id)data;
+-(BOOL) isConditionMetForDoubleValue:(double)value data:(id)data;
+-(BOOL) isConditionMetForBoolValue:(BOOL)value data:(id)data;
+-(BOOL) isConditionMetForULonglongValue:(NSUInteger)value data:(id)data;
+-(BOOL) isConditionMetForLonglongValue:(NSInteger)value data:(id)data;
+
+-(std::vector<NSUInteger>&) getULLVector;
+-(std::vector<NSInteger>&) getLLVector;
+-(std::vector<double>&) getDoubleVector;
+-(std::vector<BOOL>&) getBoolVector;
+-(NSArray<NSDate*>*) getDateVector;
+-(NSArray*) getDataVector;
 @end
 
 @interface ASFKConditionNone :ASFKCondition
--(BOOL) isConditionMetForLonglongValues:(std::vector<long long>&)values data:(id)data;
+-(BOOL) isConditionMetForLonglongValues:(std::vector<NSInteger>&)values data:(id)data;
 @end
 
-@interface ASFKConditionOnBatchEnd:ASFKCondition
--(BOOL) isConditionMetForLonglongValues:(std::vector<long long>&)values data:(id)data;
-@end
+//@interface ASFKConditionOnBatchEnd:ASFKCondition
+//-(BOOL) isConditionMetForLonglongValues:(std::vector<NSInteger>&)values data:(id)data;
+//@end
 
 @interface ASFKConditionTemporal : ASFKCondition
 @property (readonly,nonatomic) NSDate* itsDeadline;
@@ -75,18 +88,37 @@
 @end
 #pragma mark - Expiration conditions
 @interface ASFKExpirationCondition : ASFKCondition
-
+-(BOOL) setULonglongArg:(NSUInteger)arg;
+-(BOOL) setLonglongArg:(NSInteger)arg;
+-(BOOL) setBoolArg:(BOOL)arg;
+-(BOOL) setDoubleArg:(double)arg;
+-(BOOL) setObjArg:(id)arg;
+-(BOOL) setDateArg:(NSDate*)arg;
+-(BOOL) setULonglongArgs:(std::vector<NSUInteger>&)args;
+-(BOOL) setLonglongArgs:(std::vector<NSInteger>&)arg;
+-(BOOL) setBoolArgs:(std::vector<BOOL>&)arg;
+-(BOOL) setDoubleArgs:(std::vector<double>&)arg;
+-(BOOL) setObjArgs:(NSArray*)arg;
+-(BOOL) setDateArgs:(NSArray<NSDate*>*)arg;
+-(BOOL) setSampleLongLong:(NSInteger) val;
 @end
 
 @interface ASFKExpirationConditionNone :ASFKExpirationCondition
-
+-(id) initWithBatchSize:(NSInteger)size;
 @end
+@interface ASFKExpirationConditionOnTimer : ASFKExpirationCondition
+@property (nonatomic,readonly) ASFKConditionTemporal* expirationTimer;
+-(id) initWithSeconds:(NSTimeInterval)sec;
+-(id) initWithDate:(NSDate*)aDate;
+-(id) initWithTemporalCondition:(ASFKConditionTemporal*)cond;
+@end
+
 @interface ASFKExpirationOnBatchEnd :ASFKExpirationCondition
--(id) initWithBatchSize:(unsigned long long) bsize;
+-(id) initWithBatchSize:(NSInteger)size skip:(NSInteger)skip;
 @end
 
 @interface ASFKConditionCallRelease : ASFKCondition{
-@private std::vector<BOOL> releaseArgBool;
+    @private std::vector<BOOL> releaseArgBool;
     @private std::vector<double> releaseArgDouble;
     @private std::vector<long long> releaseArgLongLong;
     @private std::vector<unsigned long long> releaseArgULongLong;

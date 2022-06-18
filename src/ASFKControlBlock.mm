@@ -12,7 +12,7 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+//
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
@@ -23,6 +23,7 @@
     std::atomic< BOOL> abortByCallback;
     std::atomic< BOOL> abortByCaller;
     std::atomic< BOOL> abortByInternal;
+    //NSMutableArray* keys;
     std::vector<std::vector<long long>> indexes;
 }
 -(id)initWithParent:(ASFK_IDENTITY_TYPE)parentId sessionId:(ASFK_IDENTITY_TYPE) sessionId andSubId:(ASFK_IDENTITY_TYPE)subid{
@@ -30,16 +31,18 @@
     if(self){
         _parentId=[parentId copy];
         _sessionId=[ASFKBase concatIdentity:sessionId withIdentity:subid];
-
+        //keys=[NSMutableArray array];
+        //_blkContainer=[[ASFKBlocksContainer alloc]init];
         itsLock=[[NSLock alloc]init];
-
+        //[lock lock];
         abortByCallback=NO;
         abortByCaller=NO;
         abortByInternal=NO;
-
+        //stopped=YES;
         flushed=NO;
         paused=NO;
-
+        //terminated=NO;
+        //[lock unlock];
     }
     return self;
 }
@@ -50,6 +53,7 @@
 -(void) flushRequested:(BOOL)flush{
     flushed=flush;
 }
+
 -(BOOL) flushRequested{
     return flushed;
 }
@@ -61,11 +65,17 @@
     BOOL b=abortByCallback;
     return b;
 }
+-(void) setPaused:(BOOL) yesno{
+    paused=yesno;
+}
+-(BOOL) isPaused{
+    return paused;
+}
 -(void) reset{
     abortByCallback=NO;
     abortByCaller=NO;
     [itsLock lock];
-
+    //[keys removeAllObjects];
     indexes.clear();
     [itsLock unlock];
 }
