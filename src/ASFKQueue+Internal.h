@@ -15,7 +15,7 @@
 //  Copyright © 2019-2022 Boris Vigman. All rights reserved.
 //
 
-#import <AsyncUT_FrameW/AsyncUT_FrameW.h>
+#import "ASFKBase.h"
 
 @interface ASFKQueue (Internal)
 -(void) begin;
