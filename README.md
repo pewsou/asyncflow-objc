@@ -22,8 +22,13 @@ In the course of this SW package next terms defined:
 
 # Available Concurrency/Asynchronity Patterns
 1. *Pipeline* - multiple data, multiple routines. Proc1 is applied to item 1, result passed to Proc2, while Proc1 starts working on item 2 and so on. New data items can be submitted anytime. The execution is transparently performed using internal threadpool, while executing threads mapped, onto available CPUs providing by this some degree of parallelization.
-2. *Mailbox* - a FIFO container owned by some user; one can write messages into it, while the owner may read them later. Almost every operation requires application of some secret, that approves invoker's eligibility. Mailbox can be standalone and only the owner may read messages; or it can allow some group of other users to read. Also container may be configured for self-destruction; same about messages. Broadcast/multicast operations supported. 
+2. *Mailbox* - An alternative to Botifications mechanism; a FIFO container owned by some user; one can write messages into it, while the owner may read them later. Almost every operation requires application of some secret, that approves invoker's eligibility. Mailbox can be standalone and only the owner may read messages; or it can allow some group of other users to read. Also container may be configured for self-destruction; same about messages. Broadcast/multicast operations supported. 
 
 For more details please see Wiki.
+
+# Compatibility
+Tested with OSX 10.12
+
+
 
 Contact by email: rainbowsup191+ASFK@gmail.com
