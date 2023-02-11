@@ -12,10 +12,10 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 #import "ASFKBase.h"
-#import "ASFKMBSecret.h"
+
 #include <atomic>
 @interface ASFK_PrivSecretItem:NSObject{
     @public std::atomic<BOOL> secretSet;
@@ -74,6 +74,7 @@
     
     ASFK_PrivSecretItem* psiModerator;
     ASFK_PrivSecretItem* psiMulticaster;
+    ASFK_PrivSecretItem* psiBroadcaster;
     ASFK_PrivSecretItem* psiUnicaster;
     ASFK_PrivSecretItem* psiReader;
     ASFK_PrivSecretItem* psiPopper;
@@ -99,6 +100,7 @@
         psiConfig=[ASFK_PrivSecretItem new];
         psiUnicaster=[ASFK_PrivSecretItem new];
         psiMulticaster=[ASFK_PrivSecretItem new];
+        psiBroadcaster=[ASFK_PrivSecretItem new];
         psiReader=[ASFK_PrivSecretItem new];
         psiPopper=[ASFK_PrivSecretItem new];
         psiCreator=[ASFK_PrivSecretItem new];
@@ -131,6 +133,18 @@
     if(psiMulticaster->secretCmpSet.compare_exchange_strong(tval,YES))
     {
         psiMulticaster->secretCmpProc=cmpproc;
+        return YES;
+    }
+    return NO;
+}
+-(BOOL) setBroadcasterSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    if(cmpproc==nil){
+        return NO;
+    }
+    BOOL tval=NO;
+    if(psiBroadcaster->secretCmpSet.compare_exchange_strong(tval,YES))
+    {
+        psiBroadcaster->secretCmpProc=cmpproc;
         return YES;
     }
     return NO;
@@ -312,6 +326,17 @@
     }
     return [psiMulticaster matchSecretHost:_secretMulticaster secretGuest:secret->_secretMulticaster usageCount:itsUsageCount];
 }
+-(BOOL) matchesBroadcasterSecret:(ASFKSecret*)secret{
+    if(!psiBroadcaster->secretValid || secret==nil){
+        return NO;
+    }
+    
+    if([self passedExpirationDeadline:[NSDate date]] || itsUsageCount<1){
+        [self invalidateBroadcasterSecret];
+        return NO;
+    }
+    return [psiBroadcaster matchSecretHost:_secretBroadcaster secretGuest:secret->_secretBroadcaster usageCount:itsUsageCount];
+}
 -(BOOL) matchesSecuritySecret:(ASFKSecret*)secret{
     if(!psiSecurity->secretValid || secret==nil){
         return NO;
@@ -438,6 +463,17 @@
     }
     return NO;
 }
+-(BOOL) setBroadcasterSecretOnce:(id)secret{
+    BOOL tval=NO;
+    if(psiBroadcaster->secretSet.compare_exchange_strong(tval,YES))
+    {
+        _secretBroadcaster=secret;
+        DASFKLog(@"ASFKMBSecret: base class called");
+        return YES;
+        
+    }
+    return NO;
+}
 -(BOOL) setReaderSecretOnce:(id)secret{
     BOOL tval=NO;
     if(psiReader->secretSet.compare_exchange_strong(tval,YES))
@@ -542,6 +578,9 @@
 -(void) invalidateMulticasterSecret{
     psiMulticaster->secretValid=NO;
 }
+-(void) invalidateBroadcasterSecret{
+    psiBroadcaster->secretValid=NO;
+}
 -(void) invalidateReaderSecret{
     psiReader->secretValid=NO;
 }
@@ -584,6 +623,9 @@
 -(BOOL) validSecretMulticaster{
     return psiMulticaster->secretValid;
 }
+-(BOOL) validSecretBroadcaster{
+    return psiBroadcaster->secretValid;
+}
 -(BOOL) validSecretPopper{
     return psiPopper->secretValid;
 }
@@ -605,10 +647,10 @@
 -(BOOL) validSecretModerator{
     return psiModerator->secretValid;
 }
-
 -(void) invalidateAll{
     [self invalidateUnicasterSecret];
     [self invalidateMulticasterSecret];
+    [self invalidateBroadcasterSecret];
     [self invalidateReaderSecret];
     [self invalidatePopperSecret];
     [self invalidateDiscarderSecret];
@@ -622,34 +664,38 @@
 -(BOOL) isValidOnDate:(NSDate*)aDate{
     return (![self passedExpirationDeadline:aDate]);
 }
--(BOOL) areValidAll{
-    return (psiCreator->secretValid&&
-            psiUnicaster->secretValid&&
-            psiMulticaster->secretValid&&
-            psiReader->secretValid&&
-            psiPopper->secretValid&&
-            psiDiscarder->secretValid&&
-            psiHost->secretValid&&
-            psiSecurity->secretValid&&
-            psiConfig->secretValid&&
-            psiModerator->secretValid&&
+-(BOOL) validAll{
+    return (psiCreator->secretValid     &&
+            psiUnicaster->secretValid   &&
+            psiMulticaster->secretValid &&
+            psiBroadcaster->secretValid &&
+            psiReader->secretValid      &&
+            psiPopper->secretValid      &&
+            psiDiscarder->secretValid   &&
+            psiHost->secretValid        &&
+            psiSecurity->secretValid    &&
+            psiConfig->secretValid      &&
+            psiModerator->secretValid   &&
             psiIssuer->secretValid
             );
 }
--(BOOL) isValidAny{
-    return (
-            psiCreator->secretValid||
-            psiUnicaster->secretValid||
-            psiMulticaster->secretValid||
-            psiReader->secretValid||
-            psiPopper->secretValid||
-            psiDiscarder->secretValid||
-            psiSecurity->secretValid ||
-            psiHost->secretValid ||
-            psiConfig->secretValid||
-            psiModerator->secretValid||
+-(BOOL) validAny{
+    return (psiCreator->secretValid     ||
+            psiUnicaster->secretValid   ||
+            psiMulticaster->secretValid ||
+            psiBroadcaster->secretValid ||
+            psiReader->secretValid      ||
+            psiPopper->secretValid      ||
+            psiDiscarder->secretValid   ||
+            psiHost->secretValid        ||
+            psiSecurity->secretValid    ||
+            psiConfig->secretValid      ||
+            psiModerator->secretValid   ||
             psiIssuer->secretValid
             );
+}
+-(BOOL) validCharacteristic{
+    return [self validAll];
 }
 @end
 
@@ -667,7 +713,7 @@
     }
     return self;
 }
--(BOOL) areValidAll{
+-(BOOL) validCharacteristic{
     return (
             [self validSecretUnicaster]
             && [self validSecretMulticaster]
@@ -675,14 +721,7 @@
             && [self validSecretSecurity]
             );
 }
--(BOOL) isValidAny{
-    return (
-            [self validSecretUnicaster]
-            || [self validSecretMulticaster]
-            || [self validSecretDiscarder]
-            || [self validSecretSecurity]
-            );
-}
+
 -(BOOL) setCreatorSecretOnce:(id)secret{
     return NO;
 }
@@ -756,7 +795,7 @@
     }
     return self;
 }
--(BOOL) areValidAll{
+-(BOOL) validCharacteristic{
     return (
             [self validSecretReader]
             && [self validSecretUnicaster]
@@ -769,21 +808,6 @@
             && [self validSecretCreator]
             && [self validSecretIssuer]
             && [self validSecretConfig]
-            );
-}
--(BOOL) isValidAny{
-    return (
-            [self validSecretReader]
-            || [self validSecretUnicaster]
-            || [self validSecretMulticaster]
-            || [self validSecretPopper]
-            || [self validSecretDiscarder]
-            || [self validSecretSecurity]
-            || [self validSecretHost]
-            || [self validSecretModerator]
-            || [self validSecretCreator]
-            || [self validSecretIssuer]
-            || [self validSecretConfig]
             );
 }
 
@@ -800,10 +824,11 @@
     }
     return self;
 }
--(BOOL) areValidAll{
+-(BOOL) validCharacteristic{
     return (
             [self validSecretReader]
             && [self validSecretMulticaster]
+            && [self validSecretBroadcaster]
             && [self validSecretUnicaster]
             && [self validSecretPopper]
             && [self validSecretHost]
@@ -811,17 +836,7 @@
             && [self validSecretIssuer]
             );
 }
--(BOOL) isValidAny{
-    return (
-            [self validSecretReader]
-            || [self validSecretMulticaster]
-            || [self validSecretUnicaster]
-            || [self validSecretPopper]
-            || [self validSecretHost]
-            || [self validSecretModerator]
-            || [self validSecretIssuer]
-            );
-}
+
 -(BOOL) setDiscarderSecretOnce:(id)secret{
     return NO;
 }
@@ -856,6 +871,128 @@
     return NO;
 }
 -(BOOL) setCreatorSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+@end
+@implementation ASFKFloatingSecret
+-(id)init{
+    self=[super init];
+    if(self){
+        [self invalidateSecuritySecret];
+        [self invalidateConfigSecret];
+        [self invalidateDiscarderSecret];
+        [self invalidateCreatorSecret];
+        [self invalidateHostSecret];
+        [self invalidateIssuerSecret];
+        [self invalidatePopperSecret];
+        [self invalidateReaderSecret];
+        [self invalidateModeratorSecret];
+        [self invalidateUnicasterSecret];
+        [self invalidateMulticasterSecret];
+    }
+    return self;
+}
+-(BOOL) validCharacteristic{
+    return [self validSecretBroadcaster];
+}
+
+-(BOOL) setDiscarderSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesDiscarderSecret:(ASFKSecret *)secret{
+    return NO;
+}
+-(BOOL) setDiscarderSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setSecuritySecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesSecuritySecret:(ASFKSecret *)secret{
+    return NO;
+}
+-(BOOL) setSecuritySecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setConfigSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesConfigSecret:(ASFKSecret *)secret{
+    return NO;
+}
+-(BOOL) setConfigSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setCreatorSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesCreatorSecret:(ASFKSecret *)secret{
+    return NO;
+}
+-(BOOL) setCreatorSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setReaderSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesReaderSecret:(ASFKSecret *)secret{
+    return NO;
+}
+-(BOOL) setReaderSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setIssuerSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesIssuerSecret:(ASFKSecret*)secret{
+    return NO;
+}
+-(BOOL) setIssuerSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setPopperSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesPopperSecret:(ASFKSecret*)secret{
+    return NO;
+}
+-(BOOL) setPopperSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setUnicasterSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesUnicasterSecret:(ASFKSecret*)secret{
+    return NO;
+}
+-(BOOL) setUnicasterSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setMulticasterSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesMulticasterSecret:(ASFKSecret*)secret{
+    return NO;
+}
+-(BOOL) setMulticasterSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
+    return NO;
+}
+
+-(BOOL) setModeratorSecretOnce:(id)secret{
+    return NO;
+}
+-(BOOL) matchesModeratorSecret:(ASFKSecret*)secret{
+    return NO;
+}
+-(BOOL) setModeratorSecretComparisonProcOnce:(ASFKSecretComparisonProc)cmpproc{
     return NO;
 }
 @end

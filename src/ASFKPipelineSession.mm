@@ -12,7 +12,9 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//
+//  Created by Boris Vigman on 05/04/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 #define ASFK_LOCAL_REPLACE 0
 #define ASFK_LOCAL_ADD 1
@@ -20,13 +22,16 @@
 #import "ASFKBase+Internal.h"
 #import "ASFKBase+Statistics.h"
 #import "ASFKControlBlock+Internal.h"
-#import "ASFKPipelineSession.h"
-#import "ASFKExpirationCondition.h"
+
 #import <atomic>
 #import <queue>
+
+typedef long long sizeQData_t;
+typedef long long sizeQProcs_t;
+
 struct sASFKPrioritizedQueueItem{
-    long priority;
-    long queueId;
+    sizeQData_t priority;
+    sizeQData_t queueId;
 };
 class ASFKComparePriorities {
 public:
@@ -53,8 +58,8 @@ public:
     }
     return self;
 }
--(id)initWithSessionId:(ASFK_IDENTITY_TYPE)sessionId andSubsessionId:(ASFK_IDENTITY_TYPE)subId{
-    self=[super initWithSessionId:sessionId andSubsessionId:subId];
+-(id)initWithSessionId:(ASFK_IDENTITY_TYPE)sessionId andSubsessionId:(ASFK_IDENTITY_TYPE)subId blkMode:(eASFKBlockingCallMode)blkMode{
+    self=[super initWithSessionId:sessionId andSubsessionId:subId blkMode:blkMode];
     if(self){
         [self _PSinitWithSession:sessionId andSubsession:subId];
     }
@@ -69,11 +74,6 @@ public:
     paused=NO;
     dataQueues=[NSMutableArray array];
     queueZero=[[ASFKThreadpoolQueue alloc]init];
-    if(sessionId){
-        cblk= [self newSession:sessionId andSubsession:subId];
-    }else{
-        cblk= [self newSession];
-    }
     
     self.sessionId=cblk.sessionId;
 
@@ -148,35 +148,69 @@ public:
     }
 }
 
--(void) postDataItemsAsDictionary:(NSDictionary*)dict{
+-(BOOL) postDataItemsAsDictionary:(NSDictionary*)dict blocking:(BOOL)blk{
     [lock lock];
-    if([dataQueues count]>0)
-    {
-
-        [dict enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
-            [[dataQueues objectAtIndex:0]queueFromItem:obj];
-        }];
+    if([dict count]+busyCount.load()>ASFK_PRIVSYM_TP_ITEMS_PER_SESSION_LIMIT){
+        [lock unlock];
+        WASFKLog(ASFK_STR_UP_LIMITS_REACHED_DATA);
+        return NO;
+    }
+    if([dataQueues count]>0){
+        if(blk){
+            ASFKExecutionParams* ep=[ASFKExecutionParams new];
+            ep->preBlock=^(){
+                sASFKPrioritizedQueueItem qin;
+                qin.queueId=0;
+                qin.priority=[[dataQueues objectAtIndex:0] count];
+                pq.push(qin);
+                busyCount.fetch_add([dict count]);
+                [lock unlock];
+            };
+            [[dataQueues objectAtIndex:0]callDictionary:dict exParams:ep];
+            return YES;
+        }
+        else{
+            [[dataQueues objectAtIndex:0]castDictionary:dict exParams:nil];
+        }
+        //}
         sASFKPrioritizedQueueItem qin;
         qin.queueId=0;
         qin.priority=[[dataQueues objectAtIndex:0] count];
         pq.push(qin);
-    }
-    else{
-
-        [dict enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
-            [queueZero queueFromItem:obj];
-        }];
-
+    }else{
+        [queueZero castArray:[dict allValues] exParams:nil];
     }
     busyCount.fetch_add([dict count]);
     [lock unlock];
+    return YES;
 }
--(void) postDataItemsAsArray:(NSArray*)array{
+-(BOOL) postDataItemsAsArray:(NSArray*)array blocking:(BOOL)blk{
     [lock lock];
+    if([array count]+busyCount.load()>ASFK_PRIVSYM_TP_ITEMS_PER_SESSION_LIMIT){
+        [lock unlock];
+        WASFKLog(ASFK_STR_UP_LIMITS_REACHED_DATA);
+        return NO;
+    }
     if([dataQueues count]>0){
-        for (id item in array) {
-            [[dataQueues objectAtIndex:0]queueFromItem:item];
+        if(blk){
+            ASFKExecutionParams* ep=[ASFKExecutionParams new];
+            ep->preBlock=^(){
+                sASFKPrioritizedQueueItem qin;
+                qin.queueId=0;
+                qin.priority=[[dataQueues objectAtIndex:0] count];
+                pq.push(qin);
+                busyCount.fetch_add([array count]);
+                [lock unlock];
+                
+            };
+            
+            [[dataQueues objectAtIndex:0]callArray:array exParams:ep] ;
+            return YES;
         }
+        else{
+            [[dataQueues objectAtIndex:0]castArray:array exParams:nil];
+        }
+
         sASFKPrioritizedQueueItem qin;
         qin.queueId=0;
         qin.priority=[[dataQueues objectAtIndex:0] count];
@@ -187,14 +221,34 @@ public:
     }
     busyCount.fetch_add([array count]);
     [lock unlock];
+    return YES;
 
 }
--(void) postDataItemsAsUnorderedSet:(NSSet*)set{
+-(BOOL) postDataItemsAsUnorderedSet:(NSSet*)set blocking:(BOOL)blk{
     [lock lock];
+    if([set count]+busyCount.load()>ASFK_PRIVSYM_TP_ITEMS_PER_SESSION_LIMIT){
+        [lock unlock];
+        WASFKLog(ASFK_STR_UP_LIMITS_REACHED_DATA);
+        return NO;
+    }
     if([dataQueues count]>0){
-        for (id item in set) {
-            [[dataQueues objectAtIndex:0]queueFromItem:item];
+        if(blk){
+            ASFKExecutionParams* ep=[ASFKExecutionParams new];
+            ep->preBlock=^(){
+                sASFKPrioritizedQueueItem qin;
+                qin.queueId=0;
+                qin.priority=[[dataQueues objectAtIndex:0] count];
+                pq.push(qin);
+                busyCount.fetch_add([set count]);
+                [lock unlock];
+            };
+            [[dataQueues objectAtIndex:0]callUnorderedSet:set exParams:ep];
+            return YES;
         }
+        else{
+            [[dataQueues objectAtIndex:0]castUnorderedSet:set exParams:nil];
+        }
+        //}
         sASFKPrioritizedQueueItem qin;
         qin.queueId=0;
         qin.priority=[[dataQueues objectAtIndex:0] count];
@@ -202,51 +256,92 @@ public:
     }else{
 
         for (id item in set) {
-            [queueZero queueFromItem:item];
+            [queueZero castObject:item exParams:nil];
         }
     }
     busyCount.fetch_add([set count]);
     [lock unlock];
+    return YES;
 }
--(void) postDataItemsAsOrderedSet:(NSOrderedSet*)set{
+-(BOOL) postDataItemsAsOrderedSet:(NSOrderedSet*)set blocking:(BOOL)blk{
     [lock lock];
+    if([set count]+busyCount.load()>ASFK_PRIVSYM_TP_ITEMS_PER_SESSION_LIMIT){
+        [lock unlock];
+        WASFKLog(ASFK_STR_UP_LIMITS_REACHED_DATA);
+        return NO;
+    }
     if([dataQueues count]>0){
-        for (id item in set) {
-            [[dataQueues objectAtIndex:0]queueFromItem:item];;
+        //for (id item in set) {
+        //[[dataQueues objectAtIndex:0]castOrderedSet:set];;
+        if(blk){
+            ASFKExecutionParams* ep=[ASFKExecutionParams new];
+            ep->preBlock=^(){
+                sASFKPrioritizedQueueItem qin;
+                qin.queueId=0;
+                qin.priority=[[dataQueues objectAtIndex:0] count];
+                pq.push(qin);
+                busyCount.fetch_add([set count]);
+                [lock unlock];
+            };
+            [[dataQueues objectAtIndex:0]callOrderedSet:set exParams:ep];
+            return YES;
         }
+        else{
+            [[dataQueues objectAtIndex:0]castOrderedSet:set exParams:nil];
+        }
+        //}
         sASFKPrioritizedQueueItem qin;
         qin.queueId=0;
         qin.priority=[[dataQueues objectAtIndex:0] count];
         pq.push(qin);
     }
     else{
-
         for (id item in set) {
-            [queueZero queueFromItem:item];
+            [queueZero castObject:item exParams:nil];
         }
     }
     busyCount.fetch_add([set count]);
     [lock unlock];
+    return YES;
 }
--(void) postDataItem:(id)dataItem{
+-(BOOL) postDataItem:(id)dataItem blocking:(BOOL)blk{
     if(dataItem==nil)
-        return;
-    
+        return NO;
+    if(busyCount.load()+1>ASFK_PRIVSYM_TP_ITEMS_PER_SESSION_LIMIT){
+        [lock unlock];
+        WASFKLog(ASFK_STR_UP_LIMITS_REACHED_DATA);
+        return NO;
+    }
     [lock lock];
     if([dataQueues count]>0){
-        [[dataQueues objectAtIndex:0]queueFromItem:dataItem];
+        //[[dataQueues objectAtIndex:0]castObject:dataItem];
+        if(blk){
+            ASFKExecutionParams* ep=[ASFKExecutionParams new];
+            ep->preBlock=^(){
+                sASFKPrioritizedQueueItem qin;
+                qin.queueId=0;
+                qin.priority=[[dataQueues objectAtIndex:0] count];
+                pq.push(qin);
+                busyCount.fetch_add(1);
+                [lock unlock];
+            };
+            [[dataQueues objectAtIndex:0]callObject:dataItem exParams:nil];
+            return YES;
+        }
+        else{
+            [[dataQueues objectAtIndex:0]castObject:dataItem exParams:nil];
+        }
         busyCount.fetch_add(1);
         sASFKPrioritizedQueueItem qin;
         qin.queueId=0;
         qin.priority=[[dataQueues objectAtIndex:0] count];
         pq.push(qin);
     }else{
-
-        [queueZero queueFromItem:dataItem];
+        [queueZero castObject:dataItem exParams:nil];
         busyCount.fetch_add(1);
     }
     [lock unlock];
-
+    return YES;
 }
 //-(void) addRoutinesFromArray:(NSArray<ASFKExecutableRoutine>*)ps{
 //
@@ -254,20 +349,28 @@ public:
 -(void) replaceRoutinesWithArray:(NSArray<ASFKExecutableRoutine>*)ps{
 
     [lock lock];
+    NSUInteger was=[procs count];
     [procs removeAllObjects];
     [procs addObjectsFromArray:ps];
-    [dataQueues removeAllObjects];
-    for (ASFKExecutableRoutine er in ps) {
-        [dataQueues addObject:[ASFKThreadpoolQueue new]];
+    for(ASFKQueue* q in dataQueues){
+        [q reset];
     }
-
+    [dataQueues removeAllObjects];
+    NSUInteger qcount=0;
+    if(ps){
+        qcount=[ps count];
+        if(qcount>0){
+            [dataQueues addObject:[[ASFKThreadpoolQueueHyb alloc]initWithBlkMode:callMode]];
+        }
+        for (NSUInteger i=1;i<qcount;++i) {
+            [dataQueues addObject:[ASFKThreadpoolQueue new]];
+        }
+    }
     [lock unlock];
 
-    DASFKLog(@"Scheduled for replacement %ld procs",[ps count]);
+    DASFKLog(@"Scheduling for replacement %ld procs out, %ld procs in",was,qcount);
 
 }
-
-
 -(BOOL) hasSessionSummary{
     [lock lock];
     BOOL sp=passSummary?YES:NO;
@@ -278,7 +381,6 @@ public:
     ASFKLog(@" Session %@ to be cancelled",self.sessionId);
     [cblk cancel];
     [self flush];
-
 }
 
 -(void)flush{
@@ -304,14 +406,14 @@ public:
 -(void)reset{
 
 }
--(long) procsCount{
-    long c=0;
+-(std::uint64_t) getRoutinesCount{
+    std::uint64_t c=0;
     [lock lock];
     c=[procs count];
     [lock unlock];
     return c;
 }
--(long) itemsCount{
+-(std::uint64_t) getDataItemsCount{
     return busyCount.load();
 }
 -(BOOL) isBusy{
@@ -380,7 +482,7 @@ public:
     qin.priority=-1;
     if(pq.empty()){
         [lock unlock];
-
+//        NSLog(@"sel %ld",selector);
         return eASFK_ES_HAS_NONE;
     }else{
         qin= pq.top();
@@ -391,7 +493,6 @@ public:
     long lastpos=curpos;
     while(1){
         if([cblk cancellationRequestedByCallback]||[cblk cancellationRequestedByStarter]){
-
                 [lock lock];
                 [self _resetPriorityQueue];
                 ASFKCancellationRoutine cru=cancellationHandler;
@@ -401,7 +502,7 @@ public:
                 [self _invokeCancellationHandler:cru identity:self.sessionId];
                 //cru(self.sessionId);
                 [self forgetAllSessions];
-                DASFKLog(@"Cancelling... Pt 1, session %@",self.sessionId);
+                DASFKLog(@"[1] Cancelling... session %@",self.sessionId);
                 break;
         }
         
@@ -415,18 +516,24 @@ public:
         [lock unlock];
         BOOL empty=NO;
 
-        id result=[q pullAndOccupyWithId:selector empty:empty];
+        NSInteger itemIndex=-1;
+        id term=nil;
+        id result=[q pullAndOccupyWithId:selector empty:empty index:itemIndex term:&term];
+
         if(result)
         {
             sASFKPrioritizedQueueItem sq0;
             [lock lock];
-            ASFKExecutableRoutineSummary expirproc=expirationSummary;
+            ASFKExpirationRoutine expirproc=expirationSummary;
             ASFKExpirationCondition* trp=excond;
-            long long dqcount=[dataQueues count];
+            sizeQData_t dqcount=[dataQueues count];
             if(curpos==dqcount-1)
             {
                 [lock unlock];
-                result=eproc(cblk,result);
+                if(result!=((ASFKThreadpoolQueueHyb*)[dataQueues objectAtIndex:0])->itsSig){
+                    result=eproc(cblk,result,itemIndex);
+                }
+
                 [lock lock];
                 if([dataQueues count]>0){
                     sq0.queueId=0;
@@ -435,9 +542,9 @@ public:
                 }
                 [lock unlock];
                 if([cblk cancellationRequestedByCallback]|| [cblk cancellationRequestedByStarter]){
-
                     [lock lock];
                     [self _resetPriorityQueue];
+                    [q unoccupy];
                     ASFKCancellationRoutine cru=cancellationHandler;
                     [lock unlock];
                     [self flush];
@@ -445,17 +552,30 @@ public:
                     [self _invokeCancellationHandler:cru identity:self.sessionId];
                     //cru(self.sessionId);
                     [self forgetAllSessions];
-                    DASFKLog(@"Cancelling... Pt 2, session %@",self.sessionId);
+                    DASFKLog(@"[2] Cancelling... , session %@",self.sessionId);
                     break;
                 }
-                busyCount.fetch_sub(1);
+                
                 if([cblk flushRequested]){
                     result=nil;
                 }
+                
                 id res = result;
-                if(summary){
-                    res=summary(cblk,@{},result);
+                {
+                    [q unoccupy];
+                    
+                    if(summary && (result!=((ASFKThreadpoolQueueHyb*)[dataQueues objectAtIndex:0])->itsSig)){
+                        res=summary(cblk,@{},result);
+                    }
+                    
+                    if(result==((ASFKThreadpoolQueueHyb*)[dataQueues objectAtIndex:0])->itsSig){
+                        [(ASFKThreadpoolQueueHyb*)[dataQueues objectAtIndex:0] _releaseBlocked];
+                    }
+                    else{
+                        busyCount.fetch_sub(1);
+                    }
                 }
+
                 if(trp){
                     [trp setSampleLongLong:busyCount];
                     if([trp isConditionMet:result]){
@@ -472,35 +592,43 @@ public:
                 }
                 
             }
-            else if(curpos<dqcount-1){
-                [lock unlock];
-                if([cblk flushRequested]){
-                    [cblk flushRequested:NO];
-                }
-                else{
-                    result=eproc(cblk,result);
-                    if(!result){
-                        result=[NSNull null];
-                    }
+            else
+                if(curpos<dqcount-1){
+                    [lock unlock];
                     if([cblk flushRequested]){
                         [cblk flushRequested:NO];
                     }
                     else{
-                        [lock lock];
-                        long long dco=[dataQueues count];
-                        long nextQ;
-                        if(dco>0){
-                            nextQ=(curpos+1)%dco;
-                        }else{
-                            [lock unlock];
-                            break;
+                        if(result!=((ASFKThreadpoolQueueHyb*)[dataQueues objectAtIndex:0])->itsSig){
+                            result=eproc(cblk,result,itemIndex);
+                            if(!result){
+                                result=[NSNull null];
+                            }
                         }
-                        sq0.queueId=nextQ;
-                        sq0.priority=[[dataQueues objectAtIndex:nextQ] count];
-                        pq.push(sq0);
-                        [[dataQueues objectAtIndex:nextQ]castObject:result session:nil exParam:nil];
-                        [lock unlock];
-                    }
+                        
+                        if([cblk flushRequested]){
+                            [cblk flushRequested:NO];
+                        }
+                        else{
+                            [lock lock];
+                            sizeQData_t dco=[dataQueues count];
+                            sizeQData_t nextQ;
+                            if(dco>0){
+                                nextQ=(curpos+1)%dco;
+                            }else{
+                                [lock unlock];
+                                break;
+                            }
+                            sq0.queueId=nextQ;
+                            sq0.priority=[[dataQueues objectAtIndex:nextQ] count];
+                            pq.push(sq0);
+                            [[dataQueues objectAtIndex:nextQ]castObject:result exParams:nil index:itemIndex];
+                            if(term){
+                                [[dataQueues objectAtIndex:nextQ]castObject:term exParams:nil index:itemIndex];
+                            }
+                            [lock unlock];
+                            [q unoccupy];
+                        }
                 }
             }
             else{
@@ -523,6 +651,7 @@ public:
                     [lock lock];
                     pq.push(sq);
                     [lock unlock];
+                    
                 }
             }
         }

@@ -12,21 +12,22 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Created by Boris Vigman on 15/02/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 
 #import "ASFKBase.h"
-#import "ASFKLinearFlow+Internal.h"
+#import "ASFKSessionalFlow+Internal.h"
 @implementation ASFKFilter
--(NSDictionary*) _castUnorderedSet:(ASFKParamSet*) params{
+-(NSDictionary*) _postUnorderedSet:(ASFKParamSet*) params blocking:(BOOL) blk{
     
     return @{};
 }
--(NSDictionary*) _castOrderedSet:(ASFKParamSet*) params{
+-(NSDictionary*) _postOrderedSet:(ASFKParamSet*) params blocking:(BOOL) blk{
 
     return @{};
 }
--(NSDictionary*) _castArray:(ASFKParamSet*) params{
+-(NSDictionary*) _postArray:(ASFKParamSet*)params blocking:(BOOL) blk{
 
     return @{};
 }

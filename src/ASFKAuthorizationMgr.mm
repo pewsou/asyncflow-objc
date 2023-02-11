@@ -13,7 +13,7 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 //  ASFKAuthorizationMgr.m
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 #import "ASFKBase.h"
 #import "ASFKAuthorizationMgr.h"
@@ -58,7 +58,17 @@ ASFKMasterSecret* masterSecretBack;
                 return YES;
             }
         };
-        
+        secretProcBroadcast=^BOOL(ASFKSecret* sec0,ASFKSecret* sec1){
+            if(sec0 && sec1){
+                return [sec1 matchesBroadcasterSecret:sec0];
+            }
+            else if(sec0 || sec1){
+                return NO;
+            }
+            else{
+                return YES;
+            }
+        };
         secretProcRead=^BOOL(ASFKSecret* sec0,ASFKSecret* sec1){
             if(sec0 && sec1){
                 return [sec1 matchesReaderSecret:sec0];
@@ -149,7 +159,6 @@ ASFKMasterSecret* masterSecretBack;
                 return YES;
             }
         };
-        
 
     }
     return self;
@@ -160,11 +169,10 @@ ASFKMasterSecret* masterSecretBack;
         if(newsec!=nil){
             //test validity of new secret
             if([newsec validSecretSecurity]){
-
                 _masterSecret=newsec;
                 masterSecretBack=nil;
 
-                ASFKLog(@"DONE");
+                DASFKLog(@"DONE");
                 return YES;
             }
             return NO;
@@ -189,7 +197,7 @@ ASFKMasterSecret* masterSecretBack;
                     _masterSecret=newsec;
                     masterSecretBack=nil;
 
-                    ASFKLog(@"DONE");
+                    DASFKLog(@"DONE");
                     return YES;
                 }
                 return NO;
@@ -199,13 +207,75 @@ ASFKMasterSecret* masterSecretBack;
                 [_masterSecret invalidateAll];
                 _masterSecret=newsec;
 
-                ASFKLog(@"DONE");
+                DASFKLog(@"DONE");
                 return YES;
             }
         }
         return NO;
     }
-    ASFKLog(@"FAILED");
+    WASFKLog(@"FAILED");
+    return NO;
+}
+-(BOOL) setFloatingSecret:(ASFKFloatingSecret*)newsec authorizeWith:(ASFKMasterSecret*) msec{
+    BOOL mastersecValid=NO;
+    if(_masterSecret == nil && msec == nil){
+        mastersecValid=YES;
+    }
+//    else if(_masterSecret != nil && msec == nil){
+//        
+//    }
+//    else if(_masterSecret == nil && msec != nil){
+//        
+//    }
+    else if(_masterSecret != nil && msec != nil){
+        mastersecValid=[_masterSecret validSecretSecurity];
+        mastersecValid &= [msec validSecretSecurity];
+        mastersecValid &= [self isMasterSecretValid:msec matcher:self->secretProcSecurity];
+        
+    }
+//    if(_masterSecret ){
+//        
+//        if(msec){
+//            
+//        }
+//        else{
+//            
+//        }
+//    }
+//    else if(msec==nil){
+//        mastersecValid=YES;
+//    }
+    
+    if(mastersecValid){
+        if(_floatingSecret==nil && newsec==nil){
+            DASFKLog(@"DONE");
+            return YES;
+        }
+        else if(_floatingSecret!=nil && newsec!=nil ){
+            if([_floatingSecret validCharacteristic] && [newsec validCharacteristic]){
+                _floatingSecret=newsec;
+                DASFKLog(@"DONE");
+                return YES;
+            }
+        }
+        else if(_floatingSecret!=nil && newsec==nil){
+            if([_floatingSecret validCharacteristic] ){
+                _floatingSecret=newsec;
+                DASFKLog(@"DONE");
+                return YES;
+            }
+        }
+        else if(_floatingSecret==nil && newsec!=nil){
+            if([newsec validCharacteristic] ){
+                _floatingSecret=newsec;
+                DASFKLog(@"DONE");
+                return YES;
+            }
+
+        }
+    }
+    
+    WASFKLog(@"FAILED");
     return NO;
 }
 -(BOOL) matchCreatorSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther{
@@ -281,6 +351,15 @@ ASFKMasterSecret* masterSecretBack;
     }
     return NO;
 }
+-(BOOL) matchBroadcasterSecret:(ASFKFloatingSecret*)secCurrent with:(ASFKFloatingSecret*)secOther{
+    if(secCurrent && secOther){
+        BOOL r1=secretProcBroadcast(secCurrent,secOther);
+        return r1;
+    }else if(secCurrent==nil && secOther==nil){
+        return YES;
+    }
+    return NO;
+}
 -(BOOL) matchConfigSecret:(ASFKPrivateSecret*)secCurrent with:(ASFKPrivateSecret*)secOther{
     if(secCurrent && secOther){
         BOOL r1=secretProcConfig(secCurrent,secOther);
@@ -309,12 +388,20 @@ ASFKMasterSecret* masterSecretBack;
     return NO;
 }
 
-#pragma mark - Private methods
 -(BOOL) isMasterSecretValid:(ASFKMasterSecret*)msecret matcher:(ASFKSecretComparisonProc)match{
     if(_masterSecret && msecret){
         BOOL r1=match(_masterSecret,msecret);
         return r1;
     }else if(_masterSecret==nil && msecret==nil){
+        return YES;
+    }
+    return NO;
+}
+-(BOOL) isFloatingSecretValid:(ASFKFloatingSecret*)fsecret matcher:(ASFKSecretComparisonProc)match{
+    if(_floatingSecret && fsecret){
+        BOOL r1=match(_floatingSecret,fsecret);
+        return r1;
+    }else if(_floatingSecret==nil && fsecret==nil){
         return YES;
     }
     return NO;

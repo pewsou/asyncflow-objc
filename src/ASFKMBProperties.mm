@@ -13,10 +13,9 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 #import "ASFKBase.h"
-#import "ASFKMBProperties.h"
 
 #pragma mark - Group member
 @implementation ASFKMBGroupMemberProperties
@@ -160,7 +159,6 @@
         self.onJoinProc=nil;
         self.onLeaveProc=nil;
         self.onDiscardProc=nil;
-        self.feedbackProc=nil;
         self.runOnReadProc=nil;
         _containerDeleteTimer=[ASFKConditionTemporal new];
         _containerKickoutTimer=[ASFKConditionTemporal new];

@@ -12,7 +12,8 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Created by Boris Vigman on 15/02/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 
 #import "ASFKBase.h"
@@ -20,6 +21,70 @@
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 #import "ASFKQueue+Internal.h"
+
+@implementation ASFKPriv_EndingTerm
++ (ASFKPriv_EndingTerm *)singleInstance {
+    static ASFKPriv_EndingTerm *singleInstance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        singleInstance = [[self alloc] init];
+    });
+    return singleInstance;
+}
+@end
+
+@implementation ASFKReturnInfo{
+
+}
+-(id) init{
+    self=[super init];
+    if(self){
+        totalSessionTime=0;
+        totalProcsTime=0;
+        totalProcsCount=0;
+        totalSessionsCount=0;
+        returnCodeSuccessful=NO;
+        returnCodeDescription=@"";
+        returnResult=nil;
+        returnStatsProcsElapsedSec=0;
+        returnStatsSessionElapsedSec=0;
+        returnSessionId=nil;
+    }
+    return self;
+}
+@end
+
+@implementation ASFKConfigParams
+-(id) init{
+    self = [super init];
+    if(self) {
+        retInfo=nil;
+    }
+    return self;
+}
+-(void) setupReturnInfo{
+    if(retInfo==nil){
+        retInfo=[ASFKReturnInfo new];
+    }
+}
+@end
+
+@implementation ASFKSessionConfigParams
+-(id) init{
+    self = [super init];
+    if(self) {
+        progressProc=nil;
+        summaryRoutine=nil;
+        procs=nil;
+        cancellationProc=nil;
+        expCondition=nil;
+        onPauseProc=nil;
+        blockCallMode=ASFK_BC_NO_BLOCK;
+    }
+    return self;
+}
+
+@end
 
 @implementation ASFKExecutionParams{
     
@@ -33,35 +98,43 @@
         cancellationProc=nil;
         expCondition=nil;
         onPauseProc=nil;
+        preBlock=nil;
     }
     return self;
+}
+-(void) setupReturnInfo{
+    if(retInfo==nil){
+        retInfo=[ASFKReturnInfo new];
+    }
 }
 @end
 
 @implementation ASFKThreadpoolSession{
     std::atomic<BOOL> cancelled;
+    std::vector<NSInteger> vectorTermPos;
 }
 -(id)init{
     self=[super init];
     if(self){
-        [self _TPSinitWithSession:nil andSubsession:nil];
+        [self _TPSinitWithSession:nil andSubsession:nil blkMode:ASFK_BC_NO_BLOCK];
     }
     return self;
 }
--(id)initWithSessionId:(ASFK_IDENTITY_TYPE)sessionId andSubsessionId:(ASFK_IDENTITY_TYPE)subId{
+-(id)initWithSessionId:(ASFK_IDENTITY_TYPE)sessionId andSubsessionId:(ASFK_IDENTITY_TYPE)subId blkMode:(eASFKBlockingCallMode)blkMode{
     self=[super init];
     if(self){
-        [self _TPSinitWithSession:sessionId andSubsession:subId];
+        [self _TPSinitWithSession:sessionId andSubsession:subId blkMode:blkMode];
     }
     return self;
 }
 
--(void)_TPSinitWithSession:(ASFK_IDENTITY_TYPE)sessionId andSubsession:(ASFK_IDENTITY_TYPE)subId{
+-(void)_TPSinitWithSession:(ASFK_IDENTITY_TYPE)sessionId andSubsession:(ASFK_IDENTITY_TYPE)subId blkMode:(eASFKBlockingCallMode)blkMode{
     procs=[NSMutableArray array];
     excond=[[ASFKExpirationCondition alloc]init];
     isStopped=NO;
     paused=NO;
     onPauseNotification=nil;
+    callMode=blkMode;
     if(sessionId){
         cblk= [self newSession:sessionId andSubsession:subId];
     }else{
@@ -102,13 +175,13 @@
     NSLock* lock;
 }
 #pragma mark Singleton Methods
-+ (ASFKGlobalQueue *)sharedManager {
-    static ASFKGlobalQueue *sharedManager = nil;
++ (ASFKGlobalQueue *)singleInstance {
+    static ASFKGlobalQueue *singleInstance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        sharedManager = [[self alloc] init];
+        singleInstance = [[self alloc] init];
     });
-    return sharedManager;
+    return singleInstance;
 }
 
 - (id)init {
@@ -210,7 +283,7 @@
 -(void)cancelAll{
     [lkNonLocal lock];
     [ctrlblocks enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
-        ASFKControlBlock* cb = (ASFKControlBlock*)obj;
+        ASFKControlBlock* cb = (ASFKControlBlock*)obj;// [ctrlblocks objectForKey:key];
         if(cb){
             [cb cancel];
         }else{

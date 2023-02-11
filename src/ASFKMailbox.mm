@@ -12,7 +12,9 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//
+//  Created by Boris Vigman on 05/04/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 
 #import "ASFKBase.h"
@@ -122,7 +124,7 @@
 -(BOOL) retractMsg:(id)msgId;
 -(void) purge:(NSDate*)tm;
 -(BOOL) setMsgQthresholdsLow:(NSUInteger)low high:(NSUInteger)high;
--(BOOL) setMsgQDropPolicy:(eASFKQDroppingPolicy)policy ;
+-(BOOL) setMsgQDropperPolicy:(eASFKQDroppingPolicy)policy ;
 -(BOOL) setMsgQDropperL1:(ASFKFilter*)dropAlg ;
 -(BOOL) setMsgQDropperL2:(clbkASFKMBFilter)dropAlg ;
 -(void) _testAndRemove:(NSDate*)tmpoint;
@@ -324,7 +326,7 @@
         return NO;
     }
     BOOL res=NO;
-        [entranceQ setDroppingAlgorithmL1:dropAlg];
+        [entranceQ setDroppingAlgorithm:dropAlg];
         res=YES;
     return res;
 }
@@ -337,7 +339,7 @@
     [lock1 lock];
     itsMsgFilter=dropAlg;
     [lock1 unlock];
-        res=YES;
+    res=YES;
     return res;
 }
 -(BOOL) setMsgQDropperPolicy:(eASFKQDroppingPolicy)policy{
@@ -468,7 +470,7 @@
     if(blacklisted){
         return nil;
     }
-    if([self msgCount]>ASFK_PRIVSYM_PER_MLBX_MAX_MSG_LIMIT){
+    if([self msgCount]>ASFK_PRIVSYM_MLBX_MSG_PER_CONT_LIMIT){
         WASFKLog(@"Too many messages in container %@; delivery failed!",self.itsOwnerId);
         return nil;
     }
@@ -512,13 +514,15 @@
             if(blk==YES){
                 privmsg->blocked=YES;
                 privmsg->wlocker=[NSCondition new];
-                BOOL success = [entranceQ push:privmsg];
+                BOOL success = [entranceQ castObject:privmsg exParams:nil];
                 if(success){
                     [readBlocker->rlocker lock];
                     [readBlocker->rlocker signal];
                     [readBlocker->rlocker unlock];
                     [privmsg->wlocker lock];
-                    [privmsg->wlocker wait];
+                    while(privmsg->blocked==YES){
+                        [privmsg->wlocker wait];
+                    }
                     [privmsg->wlocker unlock];
 
                 }
@@ -528,7 +532,7 @@
                 
             }
             else{
-                if(![entranceQ push:privmsg]){
+                if(![entranceQ castObject:privmsg exParams:nil]){
                     uuid=nil;
                 }
                 else{
@@ -545,124 +549,8 @@
 }
 #pragma mark - reading
 -(NSArray*) readBlocking:(NSUInteger)amount offset:(NSUInteger)offset forUser:(id)uid latest:(BOOL) yesno{
-    if(blacklisted){
-        return @[];
-    }
-    
-    NSDate* tmpoint=[NSDate date];
-    [self _testAndRemove:tmpoint];
-    [self _testAndAccept:tmpoint];
-    NSMutableArray* ma=[NSMutableArray array];
-    NSMutableArray* readMsgs=[NSMutableArray array];
-    NSMutableIndexSet* iset=[NSMutableIndexSet new];
-    [lock1 lock];
-    if(NO==itscprops.blockingReadwriteAllowed){
-        [lock1 unlock];
-        return @[];
-    }
-    BOOL hasuser=[_users containsObject:uid] || [_itsOwnerId isEqualTo:uid];
-    if(!hasuser){
-        [lock1 unlock];
-        return ma;
-    }
-    if(NO==[self _canUserRead:uid]){
-        [lock1 unlock];
-        return ma;
-    }
-    NSUInteger msc=[messages count];
-    [lock1 unlock];
-
-    if(msc < 1 || amount > msc){
-        [readBlocker->rlocker lock];
-        
-        while(1){
-            [self _testAndRemove:tmpoint];
-            [self _testAndAccept:tmpoint];
-            [lock1 lock];
-            msc=[messages count];
-            [lock1 unlock];
-            if(msc < 1 ){
-                [readBlocker->rlocker wait];
-            }
-            else{
-                break;
-            }
-        }
-        
-        [readBlocker->rlocker unlock];
-    }
-    
-    
-    if(msc < 1 || offset >= msc){
-        
-        return ma;
-    }
-    
-    if(amount > msc){
-        amount=msc;
-    }
-    NSInteger lowbound=offset;
-    if(yesno){
-        lowbound=msc-amount;
-        if(lowbound<0){
-            lowbound=0;
-        }
-        lowbound=lowbound+offset;
-    }
-    
-    if(lowbound>msc){
-        lowbound=msc;
-    }
-    NSInteger hibound=lowbound+amount;
-    if(hibound>msc){
-        hibound=msc;
-    }
-    
-    for (NSInteger ui=lowbound; ui<hibound; ++ui)
-    {
-        Private_ASFKMBMsg* privmsg=[messages objectAtIndex:ui];
-        if(privmsg->blocked == YES){
-            if((privmsg.props.msgDeletionTimer && [privmsg.props passedDeletionDate:tmpoint]) || privmsg.props->maxAccessLimit==0){
-                [iset addIndex:ui];
-            }
-            else{
-                [ma addObject:privmsg.msg];
-                privmsg.props->maxAccessLimit.fetch_sub(1);
-                [readMsgs addObject:privmsg.msgId];
-                [privmsg->wlocker lock];
-                [privmsg->wlocker broadcast];
-                [privmsg->wlocker unlock];
-            }
-        }
-        else
-        {
-            if((privmsg.props.msgDeletionTimer && [privmsg.props passedDeletionDate:tmpoint]) || privmsg.props->maxAccessLimit==0){
-                [iset addIndex:ui];
-            }
-            else if(
-               (privmsg.props.msgReadabilityTimer.itsDeadline==nil
-                || [privmsg.props passedReadingDate:tmpoint])
-               )
-            {
-                if(privmsg.props->maxAccessLimit>0)
-                {
-                    [ma addObject:privmsg.msg];
-                    privmsg.props->maxAccessLimit.fetch_sub(1);
-                    [readMsgs addObject:privmsg.msgId];
-                }
-            }
-        }
-        
-    }
-    [messages removeObjectsAtIndexes:iset];
-    [lock1 lock];
-    NSUInteger msgCount=[messages count];
-    ASFKMbNotifyOnContainerReadRoutine crr=itscprops.onReadProc;
-    [lock1 unlock];
-    if(crr){
-        crr(self.itsOwnerId,readMsgs,msgCount);
-    }
-    return ma;
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
+    return @[];
 }
 -(NSArray*) read:(NSUInteger)amount offset:(NSUInteger)offset forUser:(id)uid latest:(BOOL) yesno{
     if(blacklisted){
@@ -724,6 +612,7 @@
             [iset addIndex:ui];
             if(privmsg->blocked==YES && privmsg->wlocker != nil){
                 [privmsg->wlocker lock];
+                privmsg->blocked=NO;
                 [privmsg->wlocker broadcast];
                 [privmsg->wlocker unlock];
             }
@@ -736,6 +625,12 @@
                     [ma addObject:privmsg.msg];
                     privmsg.props->maxAccessLimit.fetch_sub(1);
                     [readMsgs addObject:privmsg.msgId];
+                    if(privmsg->blocked==YES && privmsg->wlocker != nil){
+                        [privmsg->wlocker lock];
+                        privmsg->blocked=NO;
+                        [privmsg->wlocker broadcast];
+                        [privmsg->wlocker unlock];
+                    }
                 }
             }
         }
@@ -805,6 +700,7 @@
             [poppedMsgs addObject:privmsg.msgId];
             if(privmsg->blocked==YES && privmsg->wlocker != nil){
                 [privmsg->wlocker lock];
+                privmsg->blocked=NO;
                 [privmsg->wlocker broadcast];
                 [privmsg->wlocker unlock];
             }
@@ -846,6 +742,7 @@
         Private_ASFKMBMsg* msg=[entranceQ pull];
         if (msg->wlocker && msg->blocked==YES) {
             [msg->wlocker lock];
+            msg->blocked=NO;
             [msg->wlocker broadcast];
             [msg->wlocker unlock];
             msg->wlocker=nil;
@@ -857,6 +754,7 @@
         Private_ASFKMBMsg* msg=(Private_ASFKMBMsg* )obj;
         if (msg->wlocker) {
             [msg->wlocker lock];
+            msg->blocked=NO;
             [msg->wlocker broadcast];
             [msg->wlocker unlock];
             msg->wlocker=nil;
@@ -885,8 +783,7 @@
     [lock1 lock];
     [backusers removeAllObjects];
     [uprops removeAllObjects];
-//    [messages removeAllObjects];
-//    [entranceQ reset];
+
     [lock1 unlock];
 }
 -(void) discardUser:(id)uid{
@@ -1050,6 +947,7 @@
             [retractionList removeObject:o.props.msgId];
             if(o->blocked){
                 [o->wlocker lock];
+                o->blocked=NO;
                 [o->wlocker broadcast];
                 [o->wlocker unlock];
             }
@@ -1062,6 +960,7 @@
                     *stop = YES;
                     if(o->blocked){
                         [o->wlocker lock];
+                        o->blocked=NO;
                         [o->wlocker broadcast];
                         [o->wlocker unlock];
                     }
@@ -1180,18 +1079,23 @@
     NSMutableDictionary* deferredMulticastProps;
     NSMutableArray* blacklistedUsers;
     NSMutableArray* blacklistedGroups;
+    NSMutableArray* blacklistedAllUsers;
+    NSMutableArray* blacklistedAllGroups;
+    ASFKBatchingQueue* discardingQ;
     ASFKAuthorizationMgr* authmgr;
+    std::atomic<NSUInteger> broadcastMsgCountLimit;
+    std::atomic<NSUInteger> multicastRecvCountLimit;
 }
 
 
 #pragma mark Singleton Methods
-+ (ASFKMailbox *)sharedManager {
-    static ASFKMailbox *sharedManager = nil;
++ (ASFKMailbox *)singleInstance {
+    static ASFKMailbox *singleInstance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        sharedManager = [[self alloc] init];
+        singleInstance = [[self alloc] init];
     });
-    return sharedManager;
+    return singleInstance;
 }
 -(id) init{
     self =[super init];
@@ -1213,14 +1117,22 @@
     deferredMulticastProps=[NSMutableDictionary dictionary];
     blacklistedUsers=[NSMutableArray array];
     blacklistedGroups=[NSMutableArray array];
+    blacklistedAllUsers=[NSMutableArray array];
+    blacklistedAllGroups=[NSMutableArray array];
+    discardingQ=[ASFKBatchingQueue new];
     authmgr=[ASFKAuthorizationMgr new];
+    broadcastMsgCountLimit=ASFK_PRIVSYM_MBLX_BRCAST_MSG_LIMIT;
+    multicastRecvCountLimit=ASFK_PRIVSYM_MBLX_MULTICAST_RECV_LIMIT;
     
 }
 #pragma mark - Secret
 - (BOOL)setMasterSecret:(ASFKMasterSecret*)oldsec newSecret:(ASFKMasterSecret*)newsec {
     return [authmgr setMasterSecret:oldsec newSecret:newsec];
 }
--(BOOL)setPrivateSecret:(ASFKPrivateSecret *)oldsec withNew:(ASFKPrivateSecret *)newsec forUser:(id)uid{
+- (BOOL)setFloatingSecret:(ASFKFloatingSecret*)newsec authorizeWith:(ASFKMasterSecret*) msec{
+    return [authmgr setFloatingSecret:newsec authorizeWith:msec];
+}
+-(BOOL)setPrivateSecret:(ASFKPrivateSecret *)oldsec withNew:(ASFKPrivateSecret *)newsec forMailbox:(id)uid{
     if(uid==nil){
         return NO;
     }
@@ -1256,7 +1168,8 @@
         return nil;
     }
 
-    if(YES == [self _test_mailboxes_limit:ASFK_PRIVSYM_MAX_MLBX_LIMIT]){
+    if(YES == [self _test_mailboxes_limit:ASFK_PRIVSYM_MLBX_MAX_GRPS_LIMIT+ASFK_PRIVSYM_MLBX_MAX_MLBX_LIMIT]){
+        WASFKLog(ASFK_STR_TOO_MANY_MLBX_NOTIF);
         [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
         return nil;
     }
@@ -1287,7 +1200,8 @@
         return nil;
     }
     
-    if(YES == [self _test_mailboxes_limit:ASFK_PRIVSYM_MAX_MLBX_LIMIT]){
+    if(YES == [self _test_mailboxes_limit:ASFK_PRIVSYM_MLBX_MAX_GRPS_LIMIT+ASFK_PRIVSYM_MLBX_MAX_MLBX_LIMIT]){
+        WASFKLog(ASFK_STR_TOO_MANY_GRPS_NOTIF);
         [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
         return nil;
     }
@@ -1312,38 +1226,24 @@
     [lockGroupsDB unlock];
     return gid;
 }
-
+-(id) createGroup:(id)gid fromMembersOfGroup:(id)g0 excludingMembersOfGroup:(id)g1 withProperties:(ASFKMBContainerProperties*)props secret:(ASFKPrivateSecret*)psecret{
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
+    return nil;
+}
+-(id) createGroup:(id)gid fromMembersOfGroup:(id)g0 orMembersOfGroup:(id)g1 withProperties:(ASFKMBContainerProperties*)props secret:(ASFKPrivateSecret*)psecret{
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
+    return gid;
+}
+-(id) createGroup:(id)gid fromMembersOfGroup:(id)g0 andMembersOfGroup:(id)g1 withProperties:(ASFKMBContainerProperties*)props secret:(ASFKPrivateSecret*)psecret{
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
+    return gid;
+}
 -(id) cloneGroup:(id)gid newId:(id)newid withProperties:(ASFKMBContainerProperties*)props secret:(ASFKPrivateSecret*)psecret{
-    if(YES == [self _test_mailboxes_limit:ASFK_PRIVSYM_MAX_MLBX_LIMIT]){
-        [self _discard_relaxMemoryPressure:ASFK_PRIVSYM_OBJ_RELEASE_SAMPLE_SIZE];
-        return nil;
-    }
-    if(gid!=nil && newid!=nil){
-        [lockGroupsDB lock];
-        ASFKSomeContainer* sg0=[groups objectForKey:gid];
-        [lockGroupsDB unlock];
-        BOOL ps=[sg0 isPrivateSecretValid:psecret matcher:authmgr->secretProcCreate];
-        if(sg0
-           && [groups objectForKey:newid]==nil
-           && ps
-           && [sg0 canShareUserList]
-           ){
-            ASFKSomeContainer* sg1=[[ASFKSomeContainer alloc]initWithUser:newid privateSecret:psecret properties:props];
-            [groups setObject:sg1 forKey:newid];
-            [sg0 begin];
-            NSSet* res=[NSSet setWithSet:sg0.users];
-            for (id user in res) {
-                [sg1 addUser:user withProperties:nil];
-            }
-            [sg0 commit];
-            
-            return newid;
-        }
-    }
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
     return nil;
 }
 -(BOOL) addUser:(id)uid toGroup:(id)gid withProperties:(ASFKMBGroupMemberProperties*)props secret:(ASFKPrivateSecret*)psecret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MLBX_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE ];
     if(!gid || !uid){
         return NO;
     }
@@ -1374,52 +1274,100 @@
 }
 #pragma mark - maintenance
 -(NSUInteger) runDiscarding:(size_t)sampleSize timepoint:(NSDate*)tm{
-    dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
-    
-    NSArray* ua=[self _repackItems:blacklistedUsers  sampleSize:sampleSize dispQ:dConQ_Background];
-    if([ua count]>0){
-        dispatch_apply([ua count], dConQ_Background, ^(size_t index) {
-            ASFKSomeContainer* obj=[ua objectAtIndex:index];
-            [obj purge:tm];
-
-        });
+    NSUInteger pr=[[NSProcessInfo processInfo] activeProcessorCount];
+    [lockDB lock];
+    for(NSUInteger i=0;i<sampleSize;++i){
+        if([blacklistedUsers count]>0){
+            [discardingQ castObjectToBatch:[blacklistedUsers firstObject]];
+            [blacklistedUsers removeObjectAtIndex:0];
+        }
     }
-    tm=[NSDate date];
-    NSArray* ga=[self _repackItems:blacklistedGroups sampleSize:sampleSize dispQ:dConQ_Background];
-    if([ga count]>0){
-        dispatch_apply([ga count], dConQ_Background, ^(size_t index) {
-
-            ASFKSomeContainer* obj=[ga objectAtIndex:index];
-            [obj purge:tm];
-
-        });
-
+    [lockDB unlock];
+    [discardingQ commitBatch:NO];
+    
+    [lockDB lock];
+    for(NSUInteger i=0;i<sampleSize;++i){
+        if([blacklistedGroups count]>0){
+            [discardingQ castObjectToBatch:[blacklistedGroups firstObject]];
+            [blacklistedGroups removeObjectAtIndex:0];
+        }
+    }
+    [lockDB unlock];
+    [discardingQ commitBatch:NO];
+    
+    [lockDB lock];
+    for(NSUInteger i=0;i<sampleSize;++i){
+        if([blacklistedAllGroups count]>0){
+            [discardingQ castObjectToBatch:[blacklistedAllGroups firstObject]];
+            [blacklistedAllGroups removeObjectAtIndex:0];
+        }
+    }
+    [lockDB unlock];
+    [discardingQ commitBatch:NO];
+    
+    [lockDB lock];
+    for(NSUInteger i=0;i<sampleSize;++i){
+        if([blacklistedAllUsers count]>0){
+            [discardingQ castObjectToBatch:[blacklistedAllUsers firstObject]];
+            [blacklistedAllUsers removeObjectAtIndex:0];
+        }
+    }
+    [lockDB unlock];
+    [discardingQ commitBatch:NO];
+    
+    dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
+    {
+        NSArray* arg=[discardingQ pullBatchAsArray];
+        if(!arg){
+            NSUInteger argc=[arg  count];
+            NSUInteger argshare=argc/pr;
+            NSUInteger argresidue=argc%pr;
+            NSUInteger k=argshare*(pr);
+            for (NSUInteger i=k; i<argresidue; ++i) {
+                ASFKSomeContainer* obj=[arg objectAtIndex:i];
+                [obj purge:tm];
+            }
+            if(argshare>0){
+                dispatch_apply(pr, dConQ_Background, ^(size_t index) {
+                    NSUInteger start=argshare * index;
+                    NSUInteger end=(argshare * (index+1)) ;
+                    for (NSUInteger i=start; i<end; ++i) {
+                        ASFKSomeContainer* obj=[arg objectAtIndex:i];
+                        [obj purge:tm];
+                    }
+                    
+                });
+            }
+        }
     }
     
     return 0;
 }
 -(NSUInteger) runDeferredRoutines:(size_t)sampleSize{
     dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
-    [lockDB lock];
-    //
-    [lockDB unlock];
-    dispatch_apply(4, dConQ_Background, ^(size_t index) {
-        //
-    });
+
     return 0;
 }
 -(NSUInteger) runDelivery:(size_t)sampleSize{
+    NSUInteger pr=[[NSProcessInfo processInfo] activeProcessorCount];
     dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
     [lockDB lock];
-    if([deferredBroadcasts count]>0){
+    NSUInteger totBrcs=[deferredBroadcasts count];
+    if(totBrcs>0){
         NSMutableArray* brc=nil;
         NSMutableArray* brcprops=nil;
-        if(sampleSize>0){
+        size_t defSSize=50;
+        if(sampleSize>0){}
+        else{
+            sampleSize=defSSize;
+        }
+        
+        //if(sampleSize>0){
             brc=[NSMutableArray array];
             brcprops=[NSMutableArray array];
             NSUInteger u=0;
-            NSUInteger totusers=[deferredBroadcasts count];
-            for (; u<sampleSize && u<totusers; ++u) {
+            
+            for (; u<sampleSize && u<totBrcs; ++u) {
                 if(u==sampleSize){
                     break;
                 }
@@ -1429,58 +1377,104 @@
             NSRange rn=NSMakeRange(0, u);
             [deferredBroadcasts removeObjectsInRange:rn];
             [deferredBroadcastsProps removeObjectsInRange:rn];
-        }else{
-            brc=[NSMutableArray arrayWithArray:deferredBroadcasts];
-            brcprops =[NSMutableArray arrayWithArray:deferredBroadcastsProps];
-            [deferredBroadcasts removeAllObjects];
-            [deferredBroadcastsProps removeAllObjects];
-        }
+
         [lockDB unlock];
-        
-        [lockGroupsDB lock];
-        NSArray* arg=[groups allKeys];
-        [lockGroupsDB unlock];
-        dispatch_apply([arg count], dConQ_Background, ^(size_t index) {
-            id key=[arg objectAtIndex:index];
-            [lockGroupsDB lock];
-            ASFKSomeContainer* sg=[groups objectForKey:key];
-            [lockGroupsDB unlock];
-            if(sg && [sg isValid]){
-                NSUInteger indx=0;
-                ASFKMBMsgProperties* props=[brcprops objectAtIndex:indx];
-                if([props isKindOfClass:[NSNull class]]){
-                    props=nil;
-                }else{
-                    [props setPropMsgId:[NSUUID UUID]];
+        while ([brc count]>0)
+        {
+            {
+                [lockGroupsDB lock];
+                //NSArray* arg=[groups allKeys];
+                NSArray* argvals=[groups allValues];
+                NSUInteger argc=[argvals  count];
+                [lockGroupsDB unlock];
+                NSUInteger argshare=argc/pr;
+                NSUInteger argresidue=argc%pr;
+                NSUInteger k=argshare*(pr);
+                for (NSUInteger j=k; j<k+argresidue; ++j) {
+                    [lockGroupsDB lock];
+                    ASFKSomeContainer* sg=[argvals objectAtIndex:j];
+                    [lockGroupsDB unlock];
+                    if(sg && [sg isValid]){
+                        ASFKMBMsgProperties* props=[brcprops firstObject];
+                        if([props isKindOfClass:[NSNull class]]){
+                            props=nil;
+                        }else{
+                            [props setPropMsgId:[NSUUID UUID]];
+                        }
+                        [sg addMsg:[brc firstObject] withProperties:props group:YES blockable:NO];
+                    }
                 }
-                for (id msg in brc) {
-                    [sg addMsg:msg withProperties:props group:YES blockable:NO];
-                    ++indx;
+                if(argshare>0){
+                    dispatch_apply(pr, dConQ_Background, ^(size_t index) {
+                        NSUInteger start=argshare * index;
+                        NSUInteger end=(argshare * (index+1)) ;
+                        for (NSUInteger i=start; i<end; ++i) {
+                             [lockGroupsDB lock];
+                             ASFKSomeContainer* sg=[argvals objectAtIndex:i];
+                             [lockGroupsDB unlock];
+                             if(sg && [sg isValid]){
+                                ASFKMBMsgProperties* props=[brcprops firstObject];
+                                if([props isKindOfClass:[NSNull class]]){
+                                    props=nil;
+                                }else{
+                                    [props setPropMsgId:[NSUUID UUID]];
+                                }
+                                [sg addMsg:[brc firstObject] withProperties:props group:YES blockable:NO];
+
+                                
+                            }
+                        }
+                            
+                    });
                 }
             }
-        });
-        [lockUsersDB lock];
-        NSArray* aru=[users allKeys];
-        [lockUsersDB unlock];
-        dispatch_apply([aru count], dConQ_Background, ^(size_t index) {
-            id key=[aru objectAtIndex:index];
-            [lockUsersDB lock];
-            ASFKSomeContainer* sg=[users objectForKey:key];
-            [lockUsersDB unlock];
-            if(sg && [sg isValid]){
-                NSUInteger indx=0;
-                ASFKMBMsgProperties* props=[brcprops objectAtIndex:indx];
-                if([props isKindOfClass:[NSNull class]]){
-                    props=nil;
-                }else{
-                    [props setPropMsgId:[NSUUID UUID]];
+            {
+                [lockUsersDB lock];
+                NSArray* argvals=[users allValues];
+                NSUInteger argc=[argvals  count];
+                [lockUsersDB unlock];
+                NSUInteger argshare=argc/pr;
+                NSUInteger argresidue=argc%pr;
+                NSUInteger k=argshare*(pr);
+                for (NSUInteger j=k; j<k+argresidue; ++j) {
+                    [lockUsersDB lock];
+                    ASFKSomeContainer* sg=[argvals objectAtIndex:j];
+                    
+                    if(sg && [sg isValid]){
+                        ASFKMBMsgProperties* props=[brcprops firstObject];
+                        if([props isKindOfClass:[NSNull class]]){
+                            props=nil;
+                        }else{
+                            [props setPropMsgId:[NSUUID UUID]];
+                        }
+                        [sg addMsg:[brc firstObject] withProperties:props group:YES blockable:NO];
+                    }
+                    [lockUsersDB unlock];
                 }
-                for (id msg in brc) {
-                    [sg addMsg:msg withProperties:props group:NO blockable:NO];
-                    ++indx;
+                if(argshare>0){
+                    dispatch_apply(pr, dConQ_Background, ^(size_t index) {
+                        NSUInteger start=argshare * index;
+                        NSUInteger end=(argshare * (index+1));
+                        for (NSUInteger i=start; i<end; ++i) {
+                            [lockUsersDB lock];
+                            ASFKSomeContainer* sg=[argvals objectAtIndex:i];
+                            [lockUsersDB unlock];
+                            if(sg && [sg isValid]){
+                                ASFKMBMsgProperties* props=[brcprops firstObject];
+                                if([props isKindOfClass:[NSNull class]]){
+                                    props=nil;
+                                }else{
+                                    [props setPropMsgId:[NSUUID UUID]];
+                                }
+                                [sg addMsg:[brc firstObject] withProperties:props group:YES blockable:NO];
+                            }
+                        }
+                    });
                 }
             }
-        });
+            [brc removeObjectAtIndex:0];
+            [brcprops removeObjectAtIndex:0];
+        }
     }
     else{
         [lockDB unlock];
@@ -1506,20 +1500,48 @@
             deferredMulticastProps=[NSMutableDictionary dictionary];
         }
         [lockDB unlock];
-
-        dispatch_apply([mausr count], dConQ_Background, ^(size_t index) {
-            id uskey=[mausr objectAtIndex:index];
-            NSArray* msgs=[md objectForKey:uskey];
-            [lockUsersDB lock];
-            ASFKSomeContainer* sg=[users objectForKey:uskey];
-            [lockUsersDB unlock];
-            ASFKMBMsgProperties* props=nil;
-            for (id msg in msgs) {
+        
+        {
+            NSArray* arg=mausr;
+            NSUInteger argc=[arg  count];
+            NSUInteger argshare=argc/pr;
+            NSUInteger argresidue=argc%pr;
+            NSUInteger k=argshare*(pr);
+            for (NSUInteger j=k; j<k+argresidue; ++j) {
+                [lockUsersDB lock];
+                ASFKSomeContainer* sg=[users objectForKey:[arg objectAtIndex:j]];
+                
                 if(sg && [sg isValid]){
-                    [sg addMsg:msg withProperties:props group:NO blockable:NO];
+                    id uskey=[arg objectAtIndex:j];
+                    NSArray* msgs=[md objectForKey:uskey];
+                    ASFKMBMsgProperties* props=nil;
+                    for (id msg in msgs) {
+                        [sg addMsg:msg withProperties:props group:NO blockable:NO];
+
+                    }
                 }
+                [lockUsersDB unlock];
             }
-        });
+            if(argshare>0){
+                dispatch_apply(pr, dConQ_Background, ^(size_t index) {
+                NSUInteger start=argshare * index;
+                NSUInteger end=(argshare * (index+1));
+                for (NSUInteger i=start; i<end; ++i){
+                    id uskey=[arg objectAtIndex:i];
+                    NSArray* msgs=[md objectForKey:uskey];
+                    [lockUsersDB lock];
+                    ASFKSomeContainer* sg=[users objectForKey:uskey];
+                    [lockUsersDB unlock];
+                    ASFKMBMsgProperties* props=nil;
+                    for (id msg in msgs) {
+                        if(sg && [sg isValid]){
+                            [sg addMsg:msg withProperties:props group:NO blockable:NO];
+                        }
+                    }
+                }
+            });
+            }
+        }
     }else{
         [lockDB unlock];
     }
@@ -1528,29 +1550,37 @@
 }
 -(NSUInteger) runPeriodic:(size_t)sampleSize timepoint:(NSDate*)tm callbacks:(ASFKMBCallbacksMaintenance*)clbs{
     [lockUsersDB lock];
+    NSUInteger uc=[users count];
+    [lockUsersDB unlock];
+    
+    [lockGroupsDB lock];
+    NSUInteger gc=[groups count];
+    [lockGroupsDB unlock];
+    
+    [lockDB lock];
     NSUInteger refcount0 = [blacklistedUsers count];
     NSUInteger refcount1 = [blacklistedGroups count];
-    [lockUsersDB unlock];
-    [lockGroupsDB lock];
     NSUInteger refcount3 = [deferredBroadcasts count];
     NSUInteger refcount4 = [deferredMulticastUsers count];
-    [lockGroupsDB unlock];
+    [lockDB unlock];
+    NSUInteger msgs=[self totalMessages];
     NSUInteger objCount=refcount0+refcount1+refcount3+refcount4;
+    
     
     //process blacklisted users
     if(tm==nil){
         tm=[NSDate date];
     }
-    if(objCount>ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD){
+    if(objCount + gc + uc + msgs > ASFK_PRIVSYM_MBLX_TOTAL_OBJ_LIMIT){
         if(clbs && clbs->prMemPressure){
             clbs->prMemPressure(tm,objCount);
         }
     }
-    //dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
     
-    //dispatch_apply(2, dConQ_Background, ^(size_t index)
-    //{
-        //if(index==0)
+    dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
+    dispatch_apply(2, dConQ_Background, ^(size_t index)
+    {
+        if(index==0)
         {
             [lockUsersDB lock];
             [users enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
@@ -1558,26 +1588,22 @@
                 if(sg){
                     if([sg shouldBeDeletedAtDate:tm]){
                         [sg markBlacklisted];
-                        //[blacklistedUsers addObject:sg];
                     }
                     else{
                         [sg runPeriodicProc:tm];
                     }
-                    
                 }
             }];
             [lockUsersDB unlock];
         }
-//        else
+        else
         {
-//
             [lockGroupsDB lock];
             [groups enumerateKeysAndObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
                 ASFKSomeContainer* sg=(ASFKSomeContainer*)obj;
                 if(sg){
                     if([sg shouldBeDeletedAtDate:tm]){
                         [sg markBlacklisted];
-                        //[blacklistedGroups addObject:sg];
                     }
                     else{
                         [sg runPeriodicProc:tm];
@@ -1587,9 +1613,9 @@
             }];
             [lockGroupsDB unlock];
         }
-    //};
+    });
 
-    dispatch_queue_t dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
+    dConQ_Background=dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0);
     dispatch_apply(2, dConQ_Background, ^(size_t index){
         if(index==0){
             NSMutableArray* deadkeys=[NSMutableArray new];
@@ -1600,7 +1626,7 @@
                     [deadkeys addObject:key];
                 }
             }];
-            //blacklistedUsers = [NSMutableArray new];
+
             [users removeObjectsForKeys:deadkeys];
             [lockUsersDB unlock];
         }
@@ -1613,7 +1639,7 @@
                     [deadkeys addObject:key];
                 }
             }];
-            //blacklistedGroups = [NSMutableArray new];
+
             [groups removeObjectsForKeys:deadkeys];
             [lockGroupsDB unlock];
         }
@@ -1630,6 +1656,20 @@
     return 0;
 }
 #pragma mark - Configuring
+-(BOOL) setBroadcastMsgUpperLimit:(NSUInteger)limit secret:(ASFKMasterSecret *)secret{
+    if(NO==[authmgr isMasterSecretValid:secret matcher:authmgr->secretProcConfig]){
+        return NO;
+    }
+    broadcastMsgCountLimit=limit;
+    return YES;
+}
+-(BOOL) setMulticastReceiversUpperLimit:(NSUInteger) limit secret:(ASFKMasterSecret*)secret{
+    if(NO==[authmgr isMasterSecretValid:secret matcher:authmgr->secretProcConfig]){
+        return NO;
+    }
+    multicastRecvCountLimit=limit;
+    return YES;
+}
 -(BOOL) setProperties:(ASFKMBContainerProperties*)props forMailbox:(id)uid secret:(ASFKPrivateSecret*)secret{
     if(!uid || !props){
         return NO;
@@ -1870,7 +1910,7 @@
     ASFKLog(@"Discarding all users");
     [lockUsersDB lock];
     [lockDB lock];
-    [blacklistedUsers addObject:users];
+    [blacklistedAllUsers addObjectsFromArray:[users allValues]];
     [lockDB unlock];
 
     users=[NSMutableDictionary dictionary];
@@ -1886,7 +1926,7 @@
     }
     [lockGroupsDB lock];
     [lockDB lock];
-    [blacklistedGroups addObject:groups];
+    [blacklistedAllGroups addObjectsFromArray:[groups allValues]];
     [lockDB unlock];
     groups=[NSMutableDictionary dictionary];
     [lockGroupsDB unlock];
@@ -2116,17 +2156,7 @@
 }
 #pragma mark - Read with blocking
 -(NSArray*) waitAndReadMsg:(NSRange)skipAndTake fromMailbox:(id)mid unblockIf:(ASFKMbLockConditionRoutine)condition withSecret:(ASFKPrivateSecret*)secret{
-    if(!mid){
-        return @[];
-    }
-    [lockUsersDB lock];
-    ASFKSomeContainer* sg=[users objectForKey:mid];
-    [lockUsersDB unlock];
-
-    if(sg && ([sg isPrivateSecretValid:secret matcher:authmgr->secretProcRead])){
-        NSArray* a=[sg readBlocking:skipAndTake.length offset:skipAndTake.location forUser:mid latest:YES];
-        return a;
-    }
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
     return @[];
 }
 
@@ -2249,7 +2279,7 @@
 
 #pragma mark - Unicasting
 -(id) cast:(id)msg forMailbox:(id)uid withProperties:(ASFKMBMsgProperties*)props secret:(ASFKPrivateSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE];
     if(!uid || !msg){
         return nil;
     }
@@ -2262,7 +2292,7 @@
     return nil;
 }
 -(id) cast:(id)msg forGroup:(id)gid withProperties:(ASFKMBMsgProperties*)props secret:(ASFKPrivateSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE ];
     if(!gid || !msg){
         return nil;
     }
@@ -2279,41 +2309,46 @@
     return res;
 }
 -(id) call:(id)msg forMailbox:(id)uid withProperties:(ASFKMBMsgProperties *)props unblockIf:(ASFKCondition*)condition secret:(ASFKPrivateSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
-    if(!uid || !msg){
-        return nil;
-    }
-    [lockUsersDB lock];
-    ASFKSomeContainer* sg=[users objectForKey:uid];
-    [lockUsersDB unlock];
-    if(sg && [sg isPrivateSecretValid:secret matcher:authmgr->secretProcUnicast]){
-
-        return [sg addMsg:msg withProperties:props group:NO blockable:YES];
-    }
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
     return nil;
 }
 
 #pragma mark - Multicasting
--(BOOL) broadcast:(id)msg withProperties:(ASFKMBMsgProperties*)props secret:(ASFKSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
+-(BOOL) broadcast:(id)msg withProperties:(ASFKMBMsgProperties*)props secret:(ASFKFloatingSecret*)secret{
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE ];
     if(!msg){
         return NO;
     }
+    BOOL res=YES;
     BOOL ms=NO;
-    ms=[authmgr isMasterSecretValid:(secret) matcher:authmgr->secretProcMulticast];
-    [lockDB lock];
-    [deferredBroadcasts addObject:msg];
-    if(!props){
-        [deferredBroadcastsProps addObject:[NSNull null]];
-    }else{
-        [props setPropMsgRetractBeforeDate:nil];
-        [deferredBroadcastsProps addObject:props];
+    ms=[authmgr isFloatingSecretValid:(secret) matcher:authmgr->secretProcBroadcast];
+    if(ms){
+        [lockDB lock];
+        if([deferredBroadcasts count] < broadcastMsgCountLimit.load()){
+            [deferredBroadcasts addObject:msg];
+            if(!props){
+                [deferredBroadcastsProps addObject:[NSNull null]];
+            }else{
+                [props setPropMsgRetractBeforeDate:nil];
+                [deferredBroadcastsProps addObject:props];
+            }
+            [lockDB unlock];
+        }
+        else
+        {
+            [lockDB unlock];
+            WASFKLog(ASFK_STR_TOO_MANY_MSG_NOTIF);
+            res=NO;
+        }
     }
-    [lockDB unlock];
-    return YES;
+    else{
+        WASFKLog(ASFK_STR_SEC_CHECK_FAIL);
+        res=NO;
+    }
+    return res;
 }
 -(id) multicast:(id)msg toMembersOfGroup:(id)g0 secret:(ASFKSecret*)secret{
-    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD ];
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE ];
     if(msg==nil){
         return nil;
     }
@@ -2337,6 +2372,10 @@
             [sg0 begin];
             NSMutableSet* res=[NSMutableSet setWithSet:sg0.users];
             [sg0 commit];
+            if(multicastRecvCountLimit.load()<[res count]){
+                WASFKLog(ASFK_STR_TOO_MANY_MSG_NOTIF);
+                return nil;
+            }
             if([res count]>0){
                 ASFKMBMsgProperties* mprops=[ASFKMBMsgProperties new];
                 [self _castToSetOfUsers:res msg:msg properties:mprops];
@@ -2345,11 +2384,25 @@
             
             return retval;
         }
-        [lockDB unlock];
+        [lockGroupsDB unlock];
     }
     return nil;
 }
-
+-(id) multicast:(id)msg toMembersOfGroup:(id)g0 excludingMembersOfGroup:(id)g1 secret:(ASFKSecret*)secret{
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE ];
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
+    return nil;
+}
+-(id) multicast:(id)msg toMembersOfGroup:(id)g0 orMembersOfGroup:(id)g1 secret:(ASFKSecret*)secret{
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE ];
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
+    return nil;
+}
+-(id) multicast:(id)msg toMembersOfGroup:(id)g0 andMembersOfGroup:(id)g1 secret:(ASFKSecret*)secret{
+    [self _cast_relaxMemoryPressure:ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE ];
+    DASFKLog(ASFK_STR_VER_UNAVAIL_OP);
+    return nil;
+}
 #pragma mark - Message hiding & retraction
 -(BOOL) retractMsg:(id)msgId fromGroup:(id)gid secret:(ASFKPrivateSecret*)secret{
     if(!msgId || !gid)
@@ -2505,7 +2558,7 @@
     NSUInteger defrefcount1= [deferredMulticastUsers count];
     [lockDB unlock];
     
-    if(defrefcount0 > ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD || ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD > ASFK_PRIVSYM_MEM_PRESSURE_MSG_THRESHOLD){
+    if(defrefcount0 > ASFK_PRIVSYM_MSG_RELEASE_SAMPLE_SIZE ){
         [self runDelivery:sampleSize ];
     }
     
@@ -2513,7 +2566,7 @@
 -(void) _discard_relaxMemoryPressure:(size_t)sampleSize{
     //if(NO==[self _test_mailboxes_limit:ASFK_PRIVSYM_MEM_PRESSURE_MLBX_THRESHOLD])
     //{
-        WASFKLog(@"Too many mailboxes or groups created!");
+        //WASFKLog(@"Too many mailboxes or groups created!");
     [self runDiscarding:sampleSize timepoint:[NSDate date]] ;
     //}
         
@@ -2523,59 +2576,16 @@
     NSUInteger defrefcount0= [blacklistedUsers count];
     NSUInteger defrefcount1= [blacklistedGroups count];
     [lockDB unlock];
+    
     [lockUsersDB lock];
     NSUInteger ucount= [users count];
     [lockUsersDB unlock];
+    
     [lockGroupsDB lock];
     NSUInteger gcount= [groups count];
     [lockGroupsDB unlock];
     
     return limit<=defrefcount0+defrefcount1+ucount+gcount;
 }
--(NSArray<ASFKSomeContainer*>*) _repackItems:(NSMutableArray*)containers sampleSize:(size_t)iter dispQ:(dispatch_queue_t)dq{
-    NSMutableArray<ASFKSomeContainer*>* ma=[NSMutableArray array];
-    
-    for (NSUInteger i=0; i<iter; ++i) {
-        [lockDB lock];
-        id obj=[containers firstObject];
-        [lockDB unlock];
-        if(!obj){
-            break;
-        }
-        if([obj isKindOfClass:[NSMutableDictionary class]]){
-            NSMutableArray<ASFKSomeContainer*>* chunk=[NSMutableArray array];
-            NSMutableArray* obsolete=[NSMutableArray array];
-            [obj enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull object, BOOL * _Nonnull stop) {
-                [chunk addObject:object ];
-                [obsolete addObject:key];
-                if([chunk count]==iter){
-                    *stop=YES;;
-                }
-            }];
 
-            for (id key in obsolete) {
-                [obj removeObjectForKey:key];
-            }
-            if([obj count]==0){
-                [lockDB lock];
-                if([containers count]>0){
-                    [containers removeObjectAtIndex:0];
-                }
-                [lockDB unlock];
-            }
-            
-            return chunk;
-        }
-        else{
-            [ma addObject:(ASFKSomeContainer*)obj];
-            [lockDB lock];
-            if([containers count]>0){
-                [containers removeObjectAtIndex:0];
-            }
-            [lockDB unlock];
-        }
-    }
-    
-    return ma;
-}
 @end

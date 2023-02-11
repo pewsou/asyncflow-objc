@@ -12,11 +12,12 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Created by Boris Vigman on 15/02/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 
 #import "ASFKBase.h"
-#import "ASFKExpirationCondition.h"
+
 @interface ASFKParamSet:NSObject
 @property (nonatomic) NSMutableArray<ASFKExecutableRoutine>* procs;
 @property (nonatomic) NSMutableDictionary<id,ASFKExecutableRoutine>* namedprocs;
@@ -27,25 +28,22 @@
 @property (nonatomic) ASFKOnPauseNotification onPause;
 @property (nonatomic) id input;
 @property (nonatomic) ASFK_IDENTITY_TYPE sessionId;
-//@property (nonatomic) BOOL hasForeignProcs;
+@property (nonatomic) eASFKBlockingCallMode bcallMode;
+@property (nonatomic) ASFKReturnInfo* retInfo;
+-(void) setupReturnInfo;
 @end
 
-@interface ASFKLinearFlow (Internal)
--(NSDictionary*) _castUnorderedSet:(ASFKParamSet*) params;
--(NSDictionary*) _castOrderedSet:(ASFKParamSet*) params;
--(NSDictionary*) _castArray:(ASFKParamSet*) params;
--(NSDictionary*) _castDictionary:(ASFKParamSet*) params;
--(NSDictionary*) _callUnorderedSet:(ASFKParamSet*) params;
--(NSDictionary*) _callOrderedSet:(ASFKParamSet*) params;
--(NSDictionary*) _callArray:(ASFKParamSet*) params;
+@interface ASFKSessionalFlow (Internal)
+-(NSDictionary*) _postUnorderedSet:(ASFKParamSet*) params blocking:(BOOL)blk;
+-(NSDictionary*) _postOrderedSet:(ASFKParamSet*) params blocking:(BOOL)blk;
+-(NSDictionary*) _postArray:(ASFKParamSet*) params blocking:(BOOL)blk;
+-(NSDictionary*) _postDictionary:(ASFKParamSet*) params blocking:(BOOL)blk;
 -(NSDictionary*) _callDictionary:(ASFKParamSet*) params;
 -(ASFKParamSet*) _convertInputDictionary:(NSDictionary*) input to:(ASFKParamSet*)ps;
 -(ASFKParamSet*) _convertInputArray:(NSArray*) input to:(ASFKParamSet*)ps;
 -(ASFKParamSet*) _convertInputOrderedSet:(NSOrderedSet*) input to:(ASFKParamSet*)ps;
 -(ASFKParamSet*) _convertInputUnorderedSet:(NSSet*) input to:(ASFKParamSet*)ps;
 -(ASFKParamSet*) _convertInput:(id) input to:(ASFKParamSet*)ps;
+-(ASFKParamSet*) _decodeSessionParams:(ASFKSessionConfigParams*)ex forSession:(id)sessionId;
 -(ASFKParamSet*) _decodeExParams:(ASFKExecutionParams*)ex forSession:(id)sessionId;
-//-(void) _registerSession:(id)sessionId;
-//-(void) _unregisterSession:(id)sessionId;
-//-(void) _unregisterAllSessions;
 @end

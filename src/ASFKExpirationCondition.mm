@@ -12,25 +12,28 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Created by Boris Vigman on 23/02/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 
-#import "ASFKExpirationCondition.h"
 #import "ASFKBase.h"
 #include <chrono>
+#include <vector>
+#include <cstdint>
 @implementation ASFKCondition{
     std::atomic<BOOL> setDates;
     NSMutableArray<NSDate*>* datesArray;
     std::atomic<BOOL> setData;
     NSMutableArray* dataArray;
     std::atomic<BOOL> setULL;
-    std::vector<NSUInteger> vectULL;
     std::atomic<BOOL> setLL;
-    std::vector<NSInteger> vectLL;
     std::atomic<BOOL> setDouble;
-    std::vector<double> vectDouble;
     std::atomic<BOOL> setBool;
     std::vector<BOOL> vectBool;
+    std::vector<std::uint64_t> vectULL;
+    std::vector<std::int64_t> vectLL;
+    std::vector<double> vectDouble;
+    
 }
 -(void) _initCond{
     lock = [NSLock new];
@@ -55,7 +58,7 @@
     }
     return self;
 }
--(BOOL) setULonglongArg:(NSUInteger)arg{
+-(BOOL) setULonglongArg:(std::uint64_t)arg{
     BOOL tval=NO;
     if(setULL.compare_exchange_strong(tval,YES)){
         [lock lock];
@@ -68,7 +71,7 @@
     }
     return NO;
 }
--(BOOL) setLonglongArg:(NSInteger)arg{
+-(BOOL) setLonglongArg:(std::int64_t)arg{
     BOOL tval=NO;
     if(setLL.compare_exchange_strong(tval,YES)){
         [lock lock];
@@ -148,7 +151,7 @@
     }
     return NO;
 }
--(BOOL) setULonglongArgs:(std::vector<NSUInteger>&)args{
+-(BOOL) setULonglongArgs:(std::vector<std::uint64_t>&)args{
     BOOL tval=NO;
     if(setULL.compare_exchange_strong(tval,YES)){
         [lock lock];
@@ -161,7 +164,7 @@
     }
     return NO;
 }
--(BOOL) setLonglongArgs:(std::vector<NSInteger>&)args{
+-(BOOL) setLonglongArgs:(std::vector<std::int64_t>&)args{
     BOOL tval=NO;
     if(setLL.compare_exchange_strong(tval,YES)){
         [lock lock];
@@ -240,10 +243,10 @@
     }
     return NO;
 }
--(std::vector<NSUInteger>&) getULLVector{
+-(std::vector<std::uint64_t>&) getULLVector{
     return vectULL;
 }
--(std::vector<NSInteger>&) getLLVector{
+-(std::vector<std::int64_t>&) getLLVector{
     return vectLL;
 }
 -(std::vector<double>&) getDoubleVector{
@@ -267,10 +270,10 @@
 -(BOOL) isConditionMetForBoolValues:(std::vector<BOOL>&)value data:(id)data{
     return NO;
 }
--(BOOL) isConditionMetForULonglongValues:(std::vector<NSUInteger>&)value data:(id)data{
+-(BOOL) isConditionMetForULonglongValues:(std::vector<std::uint64_t>&)value data:(id)data{
     return NO;
 }
--(BOOL) isConditionMetForLonglongValues:(std::vector<NSInteger>&)value data:(id)data{
+-(BOOL) isConditionMetForLonglongValues:(std::vector<std::int64_t>&)value data:(id)data{
     return NO;
 }
 -(BOOL) isConditionMetAfterDateValues:(NSDate*)aDate data:(id)data{
@@ -285,10 +288,10 @@
 -(BOOL) isConditionMetForBoolValue:(BOOL)value data:(id)data{
     return NO;
 }
--(BOOL) isConditionMetForULonglongValue:(NSUInteger)value data:(id)data{
+-(BOOL) isConditionMetForULonglongValue:(std::uint64_t)value data:(id)data{
     return NO;
 }
--(BOOL) isConditionMetForLonglongValue:(NSInteger)value data:(id)data{
+-(BOOL) isConditionMetForLonglongValue:(std::int64_t)value data:(id)data{
     return NO;
 }
 @end
@@ -480,7 +483,7 @@
 @end
 
 @implementation ASFKExpirationCondition
--(BOOL) setSampleLongLong:(NSInteger) val{
+-(BOOL) setSampleLongLong:(std::int64_t) val{
     return NO;
 }
 @end
@@ -534,9 +537,9 @@
 @end
 
 @implementation ASFKExpirationOnBatchEnd{
-    std::atomic<NSInteger> batchSize;
-    std::atomic<NSInteger> skipItems;
-    std::atomic<NSInteger> sample;
+    std::atomic<std::int64_t> batchSize;
+    std::atomic<std::int64_t> skipItems;
+    std::atomic<std::int64_t> sample;
 }
 -(id) init{
     self = [super init];
@@ -547,7 +550,7 @@
     }
     return self;
 }
--(id) initWithBatchSize:(NSInteger)size skip:(NSInteger)skip{
+-(id) initWithBatchSize:(std::int64_t)size skip:(std::int64_t)skip{
     self = [super init];
     if(self){
         if(skip<0){
@@ -569,7 +572,7 @@
     
     return x;
 }
--(BOOL) isConditionMetForLonglongValue:(NSInteger)value data:(id)data{
+-(BOOL) isConditionMetForLonglongValue:(std::int64_t)value data:(id)data{
     BOOL res=NO;
     if(value > 0){
         skipItems.fetch_sub(1);
@@ -589,7 +592,7 @@
     }
     return res;
 }
--(BOOL) setSampleLongLong:(NSInteger)val{
+-(BOOL) setSampleLongLong:(std::int64_t)val{
     sample=val;
     return YES;
 }

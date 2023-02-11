@@ -13,12 +13,13 @@
  You should have received a copy of the GNU Affero General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Created by Boris Vigman on 15/02/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 
-#import "ASFKLinearFlow+Internal.h"
+#import "ASFKSessionalFlow+Internal.h"
 
-@implementation ASFKLinearFlow (Internal)
+@implementation ASFKSessionalFlow (Internal)
 -(ASFKParamSet*) _convertInputDictionary:(NSDictionary*) input to:(ASFKParamSet*)ps{
     if(input){
         ps.input=input;
@@ -73,8 +74,13 @@
         self.input=nil;
         self.excond=nil;
         self.sessionId=nil;
+        self.retInfo=nil;
     }
     return self;
 }
-
+-(void) setupReturnInfo{
+    if(self.retInfo == nil){
+        self.retInfo=[ASFKReturnInfo new];
+    }
+}
 @end

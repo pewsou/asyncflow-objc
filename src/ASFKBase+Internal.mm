@@ -13,7 +13,8 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 //
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Created by Boris Vigman on 05/04/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 
 #import "ASFKBase+Internal.h"
@@ -52,7 +53,58 @@
     NSNumber* n=[NSNumber numberWithLongLong:r];
     return n;
 }
-
++(NSArray*)  splitArray:(NSArray*) array to:(NSUInteger) chunks{
+    if(array && [array count]>0){
+        if(chunks > 0 && chunks <= [array count]){
+            NSMutableArray* ma=[NSMutableArray array];
+            NSUInteger asize=[array count]/chunks;
+            NSUInteger rem=[array count]%chunks;
+            for(NSUInteger i=0;i<chunks;++i){
+                NSMutableArray* ma0=[NSMutableArray array];
+                for(NSUInteger j=0;j<asize;++j){
+                    [ma0 addObject:[array objectAtIndex:(i * asize) + j]];
+                }
+                [ma addObject:ma0];
+            }
+            if(rem>0){
+                for (NSUInteger k=0; k<rem; ++k) {
+                    [[ma lastObject]addObject:[array objectAtIndex:(asize * chunks) + k]];
+                }
+            }
+            return ma;
+        }
+        return array;
+    }
+    return array;
+}
++(NSArray*)  groupArray:(NSArray*) array by:(NSUInteger) items{
+    if(array && [array count]>0){
+        if(items > 0 && items <= [array count]){
+            NSMutableArray* ma=[NSMutableArray array];
+//            NSUInteger chunks=[array count]/items;
+//            NSUInteger rem=[array count]%items;
+//            if(rem>0){
+//                ++chunks;
+//            }
+            for(NSUInteger i=0,j=0;i<[array count];++i,++j){
+                NSMutableArray* ma0=[ma lastObject];;
+                if(j==items){
+                    j=0;
+                }
+                if(j==0){
+                    ma0=[NSMutableArray array];
+                    [ma addObject:ma0];
+                }
+                [ma0 addObject:[array objectAtIndex:i]];
+                
+            }
+            
+            return ma;
+        }
+        return array;
+    }
+    return array;
+}
 -(BOOL) isCancellationRequested{
     
     return NO;

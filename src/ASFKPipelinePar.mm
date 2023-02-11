@@ -13,17 +13,17 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 //
-//  Copyright © 2019-2022 Boris Vigman. All rights reserved.
+//  Created by Boris Vigman on 05/04/2019.
+//  Copyright © 2019-2023 Boris Vigman. All rights reserved.
 //
 
 #import "ASFKBase.h"
 #import "ASFKBase+Internal.h"
 #import "ASFKBase+Statistics.h"
-#import "ASFKLinearFlow+Internal.h"
+#import "ASFKSessionalFlow+Internal.h"
+
 #include <atomic>
 #include <deque>
-#import "ASFKGlobalThreadpool.h"
-#import "ASFKPipelineSession.h"
 @interface ASFKPipelinePar()
 @end
 @implementation ASFKPipelinePar{
@@ -49,7 +49,7 @@
 }
 -(void) _initPipeline{
     isOnline=NO;
-    globalTPool=[ASFKGlobalThreadpool sharedManager];
+    globalTPool=[ASFKGlobalThreadpool singleInstance];
 
 }
 
@@ -74,9 +74,9 @@
     }
 }
 
--(ASFKPipelineSession*) _createNewSessionWithId:(ASFK_IDENTITY_TYPE)sessionId{
+-(ASFKPipelineSession*) _createNewSessionWithId:(ASFK_IDENTITY_TYPE)sessionId blkMode:(eASFKBlockingCallMode)blkMode{
     ASFKLog(@"creating new session for id %@",sessionId);
-    ASFKPipelineSession* newseq=[[ASFKPipelineSession alloc]initWithSessionId:sessionId andSubsessionId:nil];
+    ASFKPipelineSession* newseq=[[ASFKPipelineSession alloc]initWithSessionId:sessionId andSubsessionId:nil blkMode:blkMode];
     newseq.sessionId=[[newseq getControlBlock]sessionId];
     newseq->cancellationProc = (id)^(id sessionId){
         if(sessionId){
@@ -111,21 +111,24 @@
 /*!
  @return number of running sessions
  */
--(long long) getRunningSessionsCount{
+-(std::uint64_t) getRunningSessionsCount{
     return [globalTPool  runningSessionsCount];
 }
 /*!
  @return number of paused sessions
  */
--(long long) getPausedSessionsCount{
+-(std::uint64_t) getPausedSessionsCount{
     return [globalTPool pausedSessionsCount];
 }
 #pragma mark - Flush/Resume/Cancel
 -(void)flushAll{
     [lkNonLocal lock];
-    for (id s in ctrlblocks) {
-        [globalTPool  flushSession:s];
-    }
+    [ctrlblocks enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+        [globalTPool  flushSession:key];
+    }];
+//    for (id s in ctrlblocks) {
+//        [globalTPool  flushSession:s];
+//    }
     [lkNonLocal unlock];
 }
 
@@ -186,22 +189,46 @@
 -(BOOL)isBusySession:(id)sessionId{
     return [globalTPool  isBusySession:sessionId];
 }
-//-(BOOL) isBusy{
-//    return NO;
-//}
+-(BOOL) isBusy{
+    NSInteger bcount=0;
+    [lkNonLocal lock];
+    for (id key in ctrlblocks) {
+        ASFKControlBlock* res=[ctrlblocks objectForKey:key];
+        id s=[res getCurrentSessionId];
+        if([globalTPool  isBusySession:s]){
+            ++bcount;
+        }
+    }
+    [lkNonLocal unlock];
+    return bcount>0?YES:NO;
+}
 -(BOOL)isReady{
     return YES;
 }
 
--(long long) itemsCountForSession:(id)sessionId{
+-(std::uint64_t) itemsCountForSession:(id)sessionId{
     return [globalTPool itemsCountForSession:sessionId];
 }
+-(std::uint64_t) totalSessionsCount{
+    return [globalTPool totalSessionsCount];
+}
 
-
--(NSDictionary* _Nonnull) createSession:(ASFKExecutionParams*_Nullable) exparams sessionId:(id _Nullable ) sid {
+-(NSDictionary* _Nonnull) createSession:(ASFKSessionConfigParams*_Nullable) exparams sessionId:(id _Nullable ) sid {
     uint64 main_t1=[ASFKBase getTimestamp];
     dispatch_semaphore_wait(semHighLevelCall, DISPATCH_TIME_FOREVER);
-    ASFKParamSet* params=[self _decodeExParams:exparams forSession:sid];
+    std::uint64_t count=[globalTPool  totalSessionsCount];
+    if(count>ASFK_PRIVSYM_TP_SESSIONS_LIMIT){
+        dispatch_semaphore_signal(semHighLevelCall);
+        uint64 main_t2=[ASFKBase getTimestamp];
+        double elapsed=(main_t2-main_t1)/1e9;
+        ASFKLog(ASFK_STR_UP_LIMITS_REACHED_SES);
+        return @{kASFKReturnCode:ASFK_RC_FAIL,
+                 kASFKReturnResult:[NSNull null],
+                 kASFKReturnSessionId:[NSNull null],
+                 kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
+                 kASFKReturnDescription:ASFK_STR_UP_LIMITS_REACHED_SES};
+    }
+    ASFKParamSet* params=[self _decodeSessionParams:exparams forSession:sid];
     if(!params.summary)
     {
         params.summary = sumProc;
@@ -217,7 +244,9 @@
     //test params
     if(params.procs==nil
        || [params.procs isKindOfClass:[NSNull class]]
-       || [params.procs count]<1){
+       || [params.procs count]<1
+       || [params.procs count]>ASFK_PRIVSYM_TP_PROCS_PER_SESSION_LIMIT
+       ){
         dispatch_semaphore_signal(semHighLevelCall);
         uint64 main_t2=[ASFKBase getTimestamp];
         double elapsed=(main_t2-main_t1)/1e9;
@@ -234,8 +263,10 @@
     else{
         params.sessionId=sid;
     }
+    
+    
     //create new session
-    ASFKPipelineSession* seq=[self _createNewSessionWithId:params.sessionId];
+    ASFKPipelineSession* seq=[self _createNewSessionWithId:params.sessionId blkMode:params.bcallMode];
     //configure session
     ASFKPipelineSession* s=[self _prepareSession:seq withParams:params];
     //set Expiration Condition
@@ -273,7 +304,7 @@
 }
 
 #pragma mark - Non-blocking methods
--(NSDictionary*) _castArray:(ASFKParamSet*)params{
+-(NSDictionary*) _postArray:(ASFKParamSet*)params blocking:(BOOL) blk{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
 
@@ -293,26 +324,88 @@
                  kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                  kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
     }
-    ASFKLog(@"Performing non-blocking call");
+
+    ASFKPipelineSession* s=[self _resolveSessionforParams:params ];
+    if(s){
+        if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
+            [s setExpirationCondition:params.excond];
+        }
+
+        BOOL res=[globalTPool postDataAsArray:params.input forSession:s.sessionId blocking:blk];
+
+        uint64 main_t2=[ASFKBase getTimestamp];
+        double elapsed=(main_t2-main_t1)/1e9;
+        if(res==YES){
+            return @{kASFKReturnCode:ASFK_RC_SUCCESS,
+                         kASFKReturnResult:[NSNull null],
+                         kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
+                         kASFKReturnSessionId:s.sessionId,
+                         kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
+        }
+        return @{kASFKReturnCode:ASFK_RC_FAIL,
+                 kASFKReturnResult:[NSNull null],
+                 kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
+                 kASFKReturnSessionId:s.sessionId,
+                 kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
+    }
+    uint64 main_t2=[ASFKBase getTimestamp];
+    double elapsed=(main_t2-main_t1)/1e9;
+    EASFKLog(@"ASFKPipelinePar:Some of input parameters are invalid for session %@",params.sessionId);
+    
+    return @{kASFKReturnCode:ASFK_RC_FAIL,
+             kASFKReturnResult:[NSNull null],
+             kASFKReturnSessionId:[NSNull null],
+             kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
+             kASFKReturnDescription:@"Some of input parameters are invalid: missing data or Routines or summary"};
+
+}
+-(NSDictionary*) _postOrderedSet:(ASFKParamSet *)params blocking:(BOOL) blk{
+    __block uint64 main_t1=[ASFKBase getTimestamp];
+    DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
+
+    if (
+        params.sessionId==nil
+        ||[params.sessionId isKindOfClass:[NSNull class]]
+        ||params.input==nil
+        ||[params.input isKindOfClass:[NSNull class]]
+        ||[params.input count]<1
+        
+        ){
+
+        uint64 main_t2=[ASFKBase getTimestamp];
+        double elapsed=(main_t2-main_t1)/1e9;
+        EASFKLog(@"ASFKPipelinePar:Some of input parameters are invalid for session %@",params.sessionId);
+        return @{kASFKReturnCode:ASFK_RC_FAIL,
+                 kASFKReturnResult:[NSNull null],
+                 kASFKReturnSessionId:[NSNull null],
+                 kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
+                 kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
+    }
 
     ASFKPipelineSession* s=[self _resolveSessionforParams:params ];
     if(s){
         //if(params.hasForeignProcs){
-            if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
-                [s setExpirationCondition:params.excond];
-            }
-
-            [globalTPool postDataAsArray:params.input forSession:s.sessionId];
-
-            uint64 main_t2=[ASFKBase getTimestamp];
-            double elapsed=(main_t2-main_t1)/1e9;
             
+        if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
+            [s setExpirationCondition:params.excond];
+        }
+        BOOL res=[globalTPool  postDataAsOrderedSet:params.input forSession:s.sessionId blocking:blk];
+
+        uint64 main_t2=[ASFKBase getTimestamp];
+        double elapsed=(main_t2-main_t1)/1e9;
+        if(res==YES){
             return @{kASFKReturnCode:ASFK_RC_SUCCESS,
                      kASFKReturnResult:[NSNull null],
                      kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                      kASFKReturnSessionId:s.sessionId,
                      kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
-        //}
+        }
+        return @{kASFKReturnCode:ASFK_RC_FAIL,
+                 kASFKReturnResult:[NSNull null],
+                 kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
+                 kASFKReturnSessionId:s.sessionId,
+                 kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
+        
     }
     uint64 main_t2=[ASFKBase getTimestamp];
     double elapsed=(main_t2-main_t1)/1e9;
@@ -323,21 +416,18 @@
              kASFKReturnSessionId:[NSNull null],
              kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
              kASFKReturnDescription:@"Some of input parameters are invalid: missing data or Routines or summary"};
-
 }
--(NSDictionary*) _castOrderedSet:(ASFKParamSet *)params{
+-(NSDictionary*) _postUnorderedSet:(ASFKParamSet *)params blocking:(BOOL) blk{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
-
+    
     if (
         params.sessionId==nil
         ||[params.sessionId isKindOfClass:[NSNull class]]
         ||params.input==nil
         ||[params.input isKindOfClass:[NSNull class]]
         ||[params.input count]<1
-        
         ){
-
         uint64 main_t2=[ASFKBase getTimestamp];
         double elapsed=(main_t2-main_t1)/1e9;
         EASFKLog(@"ASFKPipelinePar:Some of input parameters are invalid for session %@",params.sessionId);
@@ -347,80 +437,31 @@
                  kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                  kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
     }
-    ASFKLog(@"Performing non-blocking call");
-
+    //ASFKLog(@"Performing non-blocking call");
+    
     ASFKPipelineSession* s=[self _resolveSessionforParams:params ];
     if(s){
-        //if(params.hasForeignProcs){
-            
-            if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
-                [s setExpirationCondition:params.excond];
-            }
-            [globalTPool  postDataAsOrderedSet:params.input forSession:s.sessionId];
-
-            uint64 main_t2=[ASFKBase getTimestamp];
-            double elapsed=(main_t2-main_t1)/1e9;
-            
-            return @{kASFKReturnCode:ASFK_RC_SUCCESS,
-                     kASFKReturnResult:[NSNull null],
-                     kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
-                     kASFKReturnSessionId:s.sessionId,
-                     kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
-        //}
-    }
-    uint64 main_t2=[ASFKBase getTimestamp];
-    double elapsed=(main_t2-main_t1)/1e9;
-    EASFKLog(@"ASFKPipelinePar:Some of input parameters are invalid for session %@",params.sessionId);
-    
-    return @{kASFKReturnCode:ASFK_RC_FAIL,
-             kASFKReturnResult:[NSNull null],
-             kASFKReturnSessionId:[NSNull null],
-             kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
-             kASFKReturnDescription:@"Some of input parameters are invalid: missing data or Routines or summary"};
-}
--(NSDictionary*) _castUnorderedSet:(ASFKParamSet *)params{
-    __block uint64 main_t1=[ASFKBase getTimestamp];
-    DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
-
-    if (
-        params.sessionId==nil
-        ||[params.sessionId isKindOfClass:[NSNull class]]
-        ||params.input==nil
-        ||[params.input isKindOfClass:[NSNull class]]
-        ||[params.input count]<1
+        if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
+            [s setExpirationCondition:params.excond];
+        }
         
-        ){
-
+        BOOL res=[globalTPool postDataAsUnorderedSet:params.input forSession:s.sessionId blocking:blk];
+        
         uint64 main_t2=[ASFKBase getTimestamp];
         double elapsed=(main_t2-main_t1)/1e9;
-        EASFKLog(@"ASFKPipelinePar:Some of input parameters are invalid for session %@",params.sessionId);
-        return @{kASFKReturnCode:ASFK_RC_FAIL,
-                 kASFKReturnResult:[NSNull null],
-                 kASFKReturnSessionId:[NSNull null],
-                 kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
-                 kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
-    }
-    ASFKLog(@"Performing non-blocking call");
-
-    ASFKPipelineSession* s=[self _resolveSessionforParams:params];
-    if(s){
-       // if(params.hasForeignProcs){
-            
-            if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
-                [s setExpirationCondition:params.excond];
-            }
-
-            [globalTPool  postDataAsUnorderedSet:params.input forSession:s.sessionId];
-            
-            uint64 main_t2=[ASFKBase getTimestamp];
-            double elapsed=(main_t2-main_t1)/1e9;
-            
+        if(res==YES){
             return @{kASFKReturnCode:ASFK_RC_SUCCESS,
                      kASFKReturnResult:[NSNull null],
                      kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                      kASFKReturnSessionId:s.sessionId,
                      kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
-        //}
+        }
+        return @{kASFKReturnCode:ASFK_RC_FAIL,
+                 kASFKReturnResult:[NSNull null],
+                 kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
+                 kASFKReturnSessionId:s.sessionId,
+                 kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
+
     }
     uint64 main_t2=[ASFKBase getTimestamp];
     double elapsed=(main_t2-main_t1)/1e9;
@@ -433,7 +474,7 @@
              kASFKReturnDescription:@"Some of input parameters are invalid: missing data or Routines or summary"};
 }
 
--(NSDictionary*) _castDictionary:(ASFKParamSet*)params{
+-(NSDictionary*) _postDictionary:(ASFKParamSet*)params blocking:(BOOL) blk{
     __block uint64 main_t1=[ASFKBase getTimestamp];
     DASFKLog(@"ASFKPipelinePar:Object %@: trying to push data items",self.itsName);
 
@@ -456,26 +497,30 @@
                  kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                  kASFKReturnDescription:ASFK_STR_INVALID_PARAM};
     }
-    ASFKLog(@"Performing non-blocking call");
 
     ASFKPipelineSession* s=[self _resolveSessionforParams:params ];
     if(s){
             
-            if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
-                [s setExpirationCondition:params.excond];
-            }
+        if(params.excond && [params.excond isKindOfClass:[ASFKExpirationCondition class]]){
+            [s setExpirationCondition:params.excond];
+        }
 
-            [globalTPool  postDataAsDictionary:params.input forSession:s.sessionId];
+        BOOL res=[globalTPool  postDataAsDictionary:params.input forSession:s.sessionId blocking:blk];
 
-            uint64 main_t2=[ASFKBase getTimestamp];
-            double elapsed=(main_t2-main_t1)/1e9;
-            
+        uint64 main_t2=[ASFKBase getTimestamp];
+        double elapsed=(main_t2-main_t1)/1e9;
+        if(res==YES){
             return @{kASFKReturnCode:ASFK_RC_SUCCESS,
                      kASFKReturnResult:[NSNull null],
                      kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
                      kASFKReturnSessionId:s.sessionId,
                      kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
-        //}
+        }
+        return @{kASFKReturnCode:ASFK_RC_FAIL,
+                 kASFKReturnResult:[NSNull null],
+                 kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
+                 kASFKReturnSessionId:s.sessionId,
+                 kASFKReturnDescription:ASFK_RC_DESCR_DEFERRED};
     }
     uint64 main_t2=[ASFKBase getTimestamp];
     double elapsed=(main_t2-main_t1)/1e9;
@@ -487,50 +532,7 @@
              kASFKReturnStatsTimeSessionElapsedSec:@(elapsed),
              kASFKReturnDescription:@"Some of input parameters are invalid: missing data or Routines or summary"};
 }
-#pragma mark - Blocking methods
--(NSDictionary*) _callArray:(ASFKParamSet*)params{
-    MASFKLog(@"Pipelining in blocking call not allowed for this data type");
-    return @{kASFKReturnCode:ASFK_RC_FAIL,
-             kASFKReturnResult:[NSNull null],
-             kASFKReturnSessionId:[NSNull null],
-             kASFKReturnStatsTimeSessionElapsedSec:@(0),
-             kASFKReturnDescription:@"Pipelining in blocking call not allowed for this data type"};
-    
-}
 
--(NSDictionary*) _callDictionary:(ASFKParamSet*)params{
-    MASFKLog(@"Pipelining in blocking call not allowed for this data type");
-    return @{kASFKReturnCode:ASFK_RC_FAIL,
-             kASFKReturnResult:[NSNull null],
-             kASFKReturnSessionId:[NSNull null],
-             kASFKReturnStatsTimeSessionElapsedSec:@(0),
-             kASFKReturnDescription:@"Pipelining in blocking call not allowed for this data type"};
-  
-}
--(NSDictionary*) _callIndexSet:(ASFKParamSet *)params{
-    MASFKLog(@"Pipelining in blocking call not allowed for this data type");
-    return @{kASFKReturnCode:ASFK_RC_FAIL,
-             kASFKReturnResult:[NSNull null],
-             kASFKReturnSessionId:[NSNull null],
-             kASFKReturnStatsTimeSessionElapsedSec:@(0),
-             kASFKReturnDescription:@"Pipelining in blocking call not allowed for this data type"};
-}
--(NSDictionary*) _callOrderedSet:(ASFKParamSet *)params{
-    MASFKLog(@"Pipelining in blocking call not allowed for this data type");
-    return @{kASFKReturnCode:ASFK_RC_FAIL,
-             kASFKReturnResult:[NSNull null],
-             kASFKReturnSessionId:[NSNull null],
-             kASFKReturnStatsTimeSessionElapsedSec:@(0),
-             kASFKReturnDescription:@"Pipelining in blocking call not allowed for this data type"};
-}
--(NSDictionary*) _callUnorderedSet:(ASFKParamSet *)params{
-    MASFKLog(@"Pipelining in blocking call not allowed for this data type");
-    return @{kASFKReturnCode:ASFK_RC_FAIL,
-             kASFKReturnResult:[NSNull null],
-             kASFKReturnSessionId:[NSNull null],
-             kASFKReturnStatsTimeSessionElapsedSec:@(0),
-             kASFKReturnDescription:@"Pipelining in blocking call not allowed for this data type"};
-}
 @end
 
 
