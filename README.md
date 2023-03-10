@@ -21,11 +21,14 @@ In the course of this SW package next terms defined:
 3. Method *"callXXX"* - **blocking** method; it will always return only AFTER all the procedures that have started by this call also have ended and summary was called (if exists).
 3. Method *"castXXX"* - **non-blocking** method; it will always return without waiting for ending of procedures.
 4. Method *"storeXXX/addXXX"* - adds the items (usually procedures) to the instance of the object so any future invocation of *cast/call* will involve the new definitions.
-5. Method *"replaceXXX"* - replaces the stored items in the instance of the object with new collection (probably empty one) so any future invocation of *cast/call* will involve the new definitions.
+5. Method *"replaceXXX"* - replaces the stored items in the instance of the object with new collection (probably empty one) so any future invocation of *cast/call* will involve the new definitions. 
 6. *Session* - Independent set of routines, ready for data processing. Each session has unique ID.
 
 # Available Concurrency/Asynchronity Patterns
-1. *Pipeline* - multiple data, multiple routines. Proc1 is applied to item 1, result passed to Proc2, while Proc1 starts working on item 2 and so on. New data items can be submitted anytime. The execution is transparently performed using internal threadpool, while executing threads mapped, onto available CPUs providing by this some degree of parallelization.
+1. *Pipeline* - multiple data, multiple routines. Proc1 is applied to item 1, result passed to Proc2, while Proc1 starts working on item 2 and so on. New data items can be submitted anytime. The execution is transparently performed using internal threadpool, while executing threads mapped, onto available CPUs providing by this some degree of parallelization. 
+    - To illustrate this consider next scenario: 
+
+
 2. *Mailbox* - An alternative to OSX Notifications mechanism; a FIFO container owned by some user; one can write messages into it, while the owner may read them later. Almost every operation requires application of some secret, that approves invoker's eligibility. Mailbox can be standalone and only the owner may read messages; or it can allow some group of other users to read. Also container may be configured for self-destruction; same about messages. Broadcast/multicast operations supported. 
 3. *Queue* - queueing facilities of different flavors; simple queue which can also wait on read/write; Filtering Queue with capability to find items by some criterium; queue size management, with setting upper/lower size limit and applying different policies. Another queue type allows to group items to batches.
 
