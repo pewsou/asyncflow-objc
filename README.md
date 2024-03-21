@@ -39,4 +39,6 @@ Tested with OSX 10.12
 
 Contact by email: rainbowsup191+ASFK@gmail.com
 
+[![Twitter URL](https://img.shields.io/twitter/url/https/twitter.com/bvprojs.svg?style=social&label=Follow%20%40bvprojs)](https://twitter.com/bvprojs)
+
 Discord: https://discord.com/channels/1057957242810400828/1057957242810400831
